@@ -65,3 +65,8 @@ plugins/
 Gala results and lane sheets carry personal data about swimmers, many of them children. The plugins work on files
 on your own machine and write their output there. Don't commit real scans or transcriptions to a public repository,
 including this one.
+
+## License
+
+[MIT](LICENSE): free to use, change and share, including commercially, as long as the copyright notice and
+licence text are kept.

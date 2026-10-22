@@ -103,3 +103,7 @@ points you at the sheets worth a second look, not as the official record.
 Scans carry swimmers' names, ages, clubs and times, many of them children's. The skill keeps everything in your
 project folder and renders page images to a temporary folder. Don't commit real scans or transcriptions to a public
 repository.
+
+## License
+
+[MIT](../../LICENSE)

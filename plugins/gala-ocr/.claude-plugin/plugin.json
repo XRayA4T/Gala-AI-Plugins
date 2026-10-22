@@ -1,6 +1,7 @@
 {
   "name": "gala-ocr",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) and referees' DQ slips into structured JSON, with no API key or OCR engine needed.",
   "author": {
     "name": "Raymond Barbour",
@@ -8,5 +9,14 @@
   },
   "homepage": "https://github.com/XRayA4T/Gala-AI-Plugins/tree/main/plugins/gala-ocr",
   "repository": "https://github.com/XRayA4T/Gala-AI-Plugins",
-  "keywords": ["swimming", "gala", "hytek", "meet-manager", "ocr", "handwriting", "lane-sheets", "disqualification"]
+  "keywords": [
+    "swimming",
+    "gala",
+    "hytek",
+    "meet-manager",
+    "ocr",
+    "handwriting",
+    "lane-sheets",
+    "disqualification"
+  ]
 }
