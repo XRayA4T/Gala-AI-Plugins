@@ -1,0 +1,190 @@
+{
+  "meetName": "Example Gala 1 - 2026",
+  "meetDate": "2026/10/10",
+  "eventNumber": 14,
+  "eventDescription": "Men 50 LC Meter Backstroke Finals",
+  "lane": 5,
+  "rows": [
+    {
+      "heat": 1,
+      "status": "SWAM",
+      "swimmerName": "Abernathy, Alex T",
+      "age": "10",
+      "classification": "",
+      "team": "ORCA-XX",
+      "seedTime": "NT",
+      "handTimes": [
+        {
+          "column": 1,
+          "written": "46.82",
+          "normalized": "46.82",
+          "corrected": false,
+          "confidence": "HIGH"
+        },
+        {
+          "column": 2,
+          "written": "46.72",
+          "normalized": "46.72",
+          "corrected": false,
+          "confidence": "HIGH"
+        },
+        {
+          "column": 3,
+          "written": "46.91",
+          "normalized": "46.91",
+          "corrected": false,
+          "confidence": "HIGH"
+        }
+      ],
+      "checkedIn": true,
+      "softTouch": false,
+      "notes": ""
+    },
+    {
+      "heat": 2,
+      "status": "SWAM",
+      "swimmerName": "Brown, Ben O",
+      "age": "15",
+      "classification": "S9",
+      "team": "MARL-XX",
+      "seedTime": "NT",
+      "handTimes": [
+        {
+          "column": 1,
+          "written": "49.09",
+          "normalized": "49.09",
+          "corrected": false,
+          "confidence": "HIGH"
+        },
+        {
+          "column": 2,
+          "written": "49.25",
+          "normalized": "49.25",
+          "corrected": false,
+          "confidence": "HIGH"
+        }
+      ],
+      "checkedIn": true,
+      "softTouch": false,
+      "notes": ""
+    },
+    {
+      "heat": 3,
+      "status": "SWAM",
+      "swimmerName": "Crane, Chris D",
+      "age": "11",
+      "classification": "",
+      "team": "SHRK-XX",
+      "seedTime": "47,01",
+      "handTimes": [
+        {
+          "column": 1,
+          "written": "47.29",
+          "normalized": "47.29",
+          "corrected": false,
+          "confidence": "HIGH"
+        },
+        {
+          "column": 2,
+          "written": "47.19",
+          "normalized": "47.19",
+          "corrected": false,
+          "confidence": "HIGH"
+        }
+      ],
+      "checkedIn": true,
+      "softTouch": false,
+      "notes": ""
+    },
+    {
+      "heat": 4,
+      "status": "SWAM",
+      "swimmerName": "Williams, Jordan",
+      "age": "12",
+      "classification": "",
+      "team": "EELS-XX",
+      "seedTime": "42,78",
+      "handTimes": [
+        {
+          "column": 1,
+          "written": "39:34",
+          "normalized": "39.34",
+          "corrected": false,
+          "confidence": "HIGH"
+        },
+        {
+          "column": 2,
+          "written": "39:22",
+          "normalized": "39.22",
+          "corrected": true,
+          "confidence": "MEDIUM"
+        },
+        {
+          "column": 3,
+          "written": "39.44",
+          "normalized": "39.44",
+          "corrected": false,
+          "confidence": "HIGH"
+        }
+      ],
+      "checkedIn": true,
+      "softTouch": false,
+      "notes": ""
+    },
+    {
+      "heat": 5,
+      "status": "NO_SHOW",
+      "swimmerName": "Davies, Kyle",
+      "age": "15",
+      "classification": "",
+      "team": "TUNA-XX",
+      "seedTime": "40,09",
+      "handTimes": [],
+      "checkedIn": false,
+      "softTouch": false,
+      "notes": "N/S written in timer column 1"
+    },
+    {
+      "heat": 6,
+      "status": "SWAM",
+      "swimmerName": "Moore, Sam",
+      "age": "15",
+      "classification": "",
+      "team": "PIKE-XX",
+      "seedTime": "35,36",
+      "handTimes": [
+        {
+          "column": 1,
+          "written": "35.53",
+          "normalized": "35.53",
+          "corrected": true,
+          "confidence": "MEDIUM"
+        },
+        {
+          "column": 2,
+          "written": "35.31",
+          "normalized": "35.31",
+          "corrected": false,
+          "confidence": "HIGH"
+        }
+      ],
+      "checkedIn": true,
+      "softTouch": false,
+      "notes": ""
+    },
+    {
+      "heat": 7,
+      "status": "NO_SHOW",
+      "swimmerName": "Taylor, Tim R",
+      "age": "15",
+      "classification": "",
+      "team": "SHRK-XX",
+      "seedTime": "30,75",
+      "handTimes": [],
+      "checkedIn": false,
+      "softTouch": false,
+      "notes": "N/S written across timer columns"
+    }
+  ],
+  "signed": true
+}

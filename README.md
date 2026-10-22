@@ -12,6 +12,18 @@ structured JSON that can be checked against the official results.
 |---|---|
 | [`gala-ocr`](plugins/gala-ocr) | Transcribes scanned lane sheets (printed entries plus handwritten times, N/S, DQ, soft touch, sign-off) and DQ slips into JSON, with no API key or OCR engine needed |
 
+## Examples
+
+Anonymised real paperwork (made-up swimmers, clubs, officials and signatures, real handwriting), with the JSON
+`gala-ocr` should produce for each. See [the walkthrough](plugins/gala-ocr/README.md#examples).
+
+| Original lane sheet ([PDF](plugins/gala-ocr/examples/original-lane-sheets.pdf)) | Scanned lane sheet ([PDF](plugins/gala-ocr/examples/scanned-lane-sheet.pdf)) | DQ slip ([PDF](plugins/gala-ocr/examples/dq-slip.pdf)) |
+|---|---|---|
+| ![Original lane sheet as printed by Meet Manager](plugins/gala-ocr/examples/original-lane-sheet.png) | ![Lane sheet filled in by the timekeepers](plugins/gala-ocr/examples/scanned-lane-sheet.jpg) | ![Front of a referee's DQ slip](plugins/gala-ocr/examples/dq-slip-front.jpg) |
+| Printed by Meet Manager: the exact names, clubs and seed times | Handwritten times, ticks, corrections, N/S and sign-off | Infraction, officials, signatures; continues on the back |
+
+Expected output: [`examples/expected/`](plugins/gala-ocr/examples/expected).
+
 ## Install
 
 In any Claude Code session:
@@ -55,6 +67,7 @@ plugins/
   gala-ocr/
     .claude-plugin/plugin.json      plugin manifest
     README.md
+    examples/                       anonymised inputs and the JSON expected from each
     skills/gala-ocr/
       SKILL.md                      instructions Claude follows
       scripts/                      helper scripts the skill runs

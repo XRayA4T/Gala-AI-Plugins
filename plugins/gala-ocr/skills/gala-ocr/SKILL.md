@@ -97,7 +97,8 @@ For each page not yet done:
 - `signed`: a signature or initials at the bottom of the sheet.
 - Every field is present and non-null; use `""` for absent text. No other fields.
 
-Excerpt (names are made up; heats 4 and 5 only, but a real file lists every heat from 1, in order):
+Excerpt from the worked example in `../../examples` (names are made up; heats 4 and 5 only, but a real file lists
+every heat from 1, in order):
 
 ```json
 {
@@ -108,8 +109,8 @@ Excerpt (names are made up; heats 4 and 5 only, but a real file lists every heat
   "lane": 5,
   "rows": [
     {
-      "heat": 4, "status": "SWAM", "swimmerName": "Doe, John", "age": "12", "classification": "",
-      "team": "SWIM-XX", "seedTime": "42,78",
+      "heat": 4, "status": "SWAM", "swimmerName": "Williams, Jordan", "age": "12", "classification": "",
+      "team": "EELS-XX", "seedTime": "42,78",
       "handTimes": [
         {"column": 1, "written": "39:34", "normalized": "39.34", "corrected": false, "confidence": "HIGH"},
         {"column": 2, "written": "39:22", "normalized": "39.22", "corrected": true, "confidence": "MEDIUM"},
@@ -118,8 +119,8 @@ Excerpt (names are made up; heats 4 and 5 only, but a real file lists every heat
       "checkedIn": true, "softTouch": false, "notes": ""
     },
     {
-      "heat": 5, "status": "NO_SHOW", "swimmerName": "Roe, Sam", "age": "15", "classification": "",
-      "team": "AQUA-XX", "seedTime": "40,09", "handTimes": [], "checkedIn": false, "softTouch": false,
+      "heat": 5, "status": "NO_SHOW", "swimmerName": "Davies, Kyle", "age": "15", "classification": "",
+      "team": "TUNA-XX", "seedTime": "40,09", "handTimes": [], "checkedIn": false, "softTouch": false,
       "notes": "N/S written in timer column 1"
     }
   ],

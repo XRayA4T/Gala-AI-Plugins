@@ -1,0 +1,17 @@
+{
+  "sourceFile": "dq-slip.pdf",
+  "page": 1,
+  "backPage": 2,
+  "date": "2026-10-10",
+  "eventNumber": 8,
+  "heat": 1,
+  "lane": 2,
+  "infraction": "Turn not initiated at completion of the arm pull after leaving position on the back 150m turn",
+  "back": "2nd arm pull",
+  "official": "A. Official",
+  "referee": "B. Referee",
+  "officialSigned": true,
+  "refereeSigned": true,
+  "announcementTime": "12:07",
+  "initialled": true
+}
