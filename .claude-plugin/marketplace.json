@@ -1,0 +1,21 @@
+{
+  "name": "gala-ai-plugins",
+  "owner": {
+    "name": "Raymond Barbour",
+    "url": "https://github.com/XRayA4T"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for running and auditing swimming galas: reading scanned Hy-Tek Meet Manager lane sheets and DQ slips.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "gala-ocr",
+      "source": "./plugins/gala-ocr",
+      "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) and referees' DQ slips into structured JSON, with no API key or OCR engine needed.",
+      "version": "1.0.0",
+      "category": "productivity",
+      "keywords": ["swimming", "gala", "hytek", "meet-manager", "ocr", "handwriting", "lane-sheets", "disqualification"]
+    }
+  ]
+}
