@@ -73,7 +73,8 @@ Every entry gets its team, swimmer and entry lines copied from the entries file 
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt,
 otherwise the Gen7 buttons, as Meet Manager writes them for a pad time; when TP is the final time and there is
-no PB time, the SW median, thousandths dropped, as backup 1), places in the heat and
+no PB time, the SW median, thousandths dropped, as backup 1; when TP agrees with the SW median but not PB, PB as
+backup 1 and the SW median as backup 2), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
 form (stroke number and letter: BaG is `2G`, BfG `4G`, IMB `5B`; Meet Manager stores and exports codes this way,
 even one entered as BfG, and shows them in the FINA style), no-shows, and the Gen7 splits. Every event is marked
