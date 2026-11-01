@@ -50,6 +50,26 @@ Write the report where the user asks; otherwise next to the OCR folder, named af
 swimmers' names (many of them children): keep it in the user's project, and don't publish or upload it anywhere
 the user hasn't asked for.
 
+## Meet Manager merge results file
+
+To load the audited results into Hy-Tek Meet Manager, write a merge results file (.hy3) from the same data, the
+meet's entries export (the `Hfile*.hy3` inside `Meet Entries-<meet>.zip`; unzip it into a temp folder) and a merge
+results file Meet Manager exported for this meet (its header and layout are copied):
+
+```
+python3 -I $SKILL/scripts/merge_results.py <ocr folder> "<gen7 report>.pdf" <entries>.hy3 "<merge results>.hy3" "<out>.hy3"
+```
+
+Every entry gets its team, swimmer and entry lines copied from the entries file, then its result: the final time,
+the pad time, the lane sheet times as backup times (the Gen7 buttons when there are none), places in the heat and
+in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
+form (stroke number and letter: BaG is `2G`, IMB `5B`), no-shows, and the Gen7 splits. The A1 header line is the
+template's with today's date. Name the output like Meet Manager's (`Merge Meet Results-<meet>-<date>-audit.hy3`).
+
+Report what the script prints (swims it moved to the lane sheet's swimmer, swims with no time, lane sheet swimmers
+with no entry) and how the file differs from the Meet Manager results it replaces. The file holds swimmers' dates of
+birth and registration numbers: keep it in the user's project, and delete any temp copies.
+
 ## What it works out
 
 For every swim (event, heat, lane): **TP**, the touch pad finish (the lane's Gen7 split on the race's last row);
