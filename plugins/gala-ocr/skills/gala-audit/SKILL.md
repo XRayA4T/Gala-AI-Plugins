@@ -45,7 +45,7 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.35] [--codes DQ_CODES.txt] [--scan-url "SCAN.pdf=URL" ...]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scan-url "SCAN.pdf=URL" ...]
 ```
 
 Every section, and each event in the full result review, starts collapsed. A **Paper** column links each swim to
@@ -71,7 +71,8 @@ python3 -I $SKILL/scripts/merge_results.py <ocr folder> "<gen7 report>.pdf" <ent
 
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
-the pad time, the lane sheet times as backup times (the Gen7 buttons when there are none), places in the heat and
+the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt,
+otherwise the Gen7 buttons, as Meet Manager writes them for a pad time), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
 form (stroke number and letter: BaG is `2G`, BfG `4G`, IMB `5B`; Meet Manager stores and exports codes this way,
 even one entered as BfG, and shows them in the FINA style), no-shows, and the Gen7 splits. Every event is marked
@@ -91,10 +92,11 @@ when the Off. Time is an underlined button override and that split is the same t
 button time into it);
 **PB**, the push button backup time; **SW**, every lane sheet time; then the **final time**:
 
-| TP | Condition (tolerance 0.35s) | Final | Note |
+| TP | Condition (tolerance 0.30s) | Final | Note |
 |---|---|---|---|
 | yes | within tolerance of PB and SW median | TP | |
 | yes | outside PB, within SW median | TP | bad PB time |
+| yes | outside SW median, in doubt: fewer than two SW times within the tolerance of their median, and PB not within it either | TP | in doubt; the SW times go in the merge file as backups |
 | yes | within PB, outside SW median | SW median | TP and PB both outside the watches (listed under SW overrides) |
 | yes | outside both | SW median | bad TP time (listed under SW overrides) |
 | no | | SW median, thousandths dropped | bad PB if PB is outside tolerance; poor SW time if adding PB moves the median by more than the tolerance |

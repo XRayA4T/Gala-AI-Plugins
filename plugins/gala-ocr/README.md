@@ -15,7 +15,7 @@ event, heat, race number, start time, places, splits, pad and backup button time
 overrode, P:B difference, reaction times) straight from the PDF's text into JSON or CSV. That report is not scanned, so no OCR is involved.
 
 A third skill, **gala-audit**, puts it all together in one HTML report: every swim by event, heat and lane with its
-touch pad, push button and stopwatch times, the final time worked out from them (0.35s tolerance), the Gen7 official
+touch pad, push button and stopwatch times, the final time worked out from them (0.30s tolerance), the Gen7 official
 time and audit notes (bad touch pad, bad push button, poor stopwatch times), DQ slips checked against the lane
 sheets and Gen7 and given their FINA DQ code (the list is in `skills/gala-audit/data/dqcodesFINA.txt`), and lane sheet findings.
 

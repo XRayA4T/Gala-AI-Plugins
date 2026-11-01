@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.35] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.30] [--codes DQ_CODES.txt]
                        [--scan-url "SCAN.pdf=URL" ...]
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
@@ -12,7 +12,8 @@ For every event, heat and lane the report lists the touch pad (TP) time, the pus
 (SW) time, the final time and audit notes. The final time:
 - with a TP time: TP when it is within the tolerance of the SW median (a PB time outside it is noted as bad);
   otherwise the SW median overrides it: the TP time is noted as bad, or, when TP agrees with PB, as TP and PB both
-  outside the SW median; TP alone when there are no SW times;
+  outside the SW median; TP alone when there are no SW times. In doubt (fewer than two SW times within the tolerance of
+  their median, and PB not within it either), TP stands and is noted "In doubt";
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
 A no-show on the lane sheet with no SW times is recorded as N/S with no time, even when Gen7 has one.
@@ -222,7 +223,7 @@ class Audit:
         # A no-show on the lane sheet with no SW times is recorded as N/S, whatever Gen7 has.
         res["ns"] = bool(row) and row["status"] == "NO_SHOW" and not row["handTimes"]
         before = len(res["notes"])
-        final, res["swOverride"] = None, False
+        final, res["swOverride"], res["swDoubt"] = None, False, False
         if tp is not None:
             if med is None:
                 final = tp
@@ -233,6 +234,14 @@ class Audit:
                 final = tp
                 if pb is not None and abs(tp - pb) > tol:
                     note(f"Bad PB time: {fmt(pb)} is {fmt(pb - tp, True)}s from TP", "warn")
+            elif sum(abs(v - med) <= tol for _, v, _ in sw) < 2 and not (pb is not None and abs(pb - med) <= tol):
+                # In doubt (fewer than two SW times agree with their median, and PB does not back it): TP stands,
+                # and the merge file carries the SW times for a referee to see.
+                why = "there is only one SW time" if len(sw) < 2 else "no two SW times agree with their median"
+                final, res["swDoubt"] = tp, True
+                note(f"In doubt: TP {fmt(tp)} is {fmt(tp - med, True)}s from the SW median, but {why}"
+                     + (" and PB does not agree with them" if pb is not None else "")
+                     + "; TP kept, SW times copied to the merge file", "warn")
             elif pb is not None and abs(tp - pb) <= tol:
                 final, res["swOverride"] = int(med), True
                 note(f"TP and PB agree but are outside the SW median: TP {fmt(tp)} is {fmt(tp - med, True)}s and PB "
@@ -519,7 +528,7 @@ def result_row(audit, res, with_event=False):
     row = res["row"] or {}
     final_cls = " bad" if res["serious"] else ""
     diff = res["diff"]
-    diff_cls = " bad" if diff is not None and abs(diff) > 35 else (" medium" if diff else "")
+    diff_cls = " bad" if diff is not None and abs(diff) > audit.tol else (" medium" if diff else "")
     key = swim_id(res["event"], res["heat"], res["lane"])
     lead = f'<td><a href="#{key}">{res["event"]}</a></td>' if with_event else ""
     rid = "" if with_event else f' id="{key}"'
@@ -564,6 +573,7 @@ def build(audit, tol, urls=None):
         ("Final time from the SW median (no TP, or TP outside the SW median)", count(lambda r: has(r, "SW median used"))),
         ("SW median overrides the TP time (see SW overrides)", count(lambda r: r["swOverride"])),
         ("TP and PB agree but are outside the SW median", count(lambda r: has(r, "TP and PB agree"))),
+        ("In doubt: TP kept, SW times copied to the merge file", count(lambda r: r["swDoubt"])),
         ("Bad TP time (outside the tolerance of both PB and the SW median)", count(lambda r: has(r, "Bad TP time"))),
         ("Bad PB time", count(lambda r: has(r, "Bad PB time"))),
         ("Poor SW time", count(lambda r: has(r, "Poor SW time"))),
@@ -606,7 +616,9 @@ def build(audit, tol, urls=None):
            'backup time, <b>SW</b> the lane sheet (stopwatch) times; the SW median of two is their mean.</li>'
            '<li>With a TP time: TP when it is within the tolerance of the SW median (a PB outside it is a bad PB); '
            'otherwise the SW median overrides it, even when TP agrees with PB (both are noted as outside the SW '
-           'median; a TP that agrees with neither is a bad TP). TP alone when there are no SW times.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
+           'median; a TP that agrees with neither is a bad TP). TP alone when there are no SW times. In doubt (fewer '
+           'than two SW times within the tolerance of their median, and PB not within it either), TP '
+           'stays the final time and the SW times are copied to the merge file.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
            'bad PB; if adding PB moves the median by more than the tolerance, an SW time is poor and is named when '
            'it can be picked out. PB alone when there are no SW times.</li>'
            '<li>A no-show on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has '
@@ -701,7 +713,7 @@ def main():
     args = sys.argv[1:]
     if len(args) < 3:
         sys.exit(__doc__)
-    tol = round(float(args[args.index("--tolerance") + 1]) * 100) if "--tolerance" in args else 35
+    tol = round(float(args[args.index("--tolerance") + 1]) * 100) if "--tolerance" in args else 30
     sheets, slips, etd = load(args[0])
     codes = load_codes(args[args.index("--codes") + 1] if "--codes" in args else DQ_CODES)
     given = pathlib.Path(args[0]) / "dq-codes.json"

@@ -2,7 +2,7 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7_REPORT.pdf ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--tolerance 0.35]
+Usage: merge_results.py OCR_DIR GEN7_REPORT.pdf ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--tolerance 0.30]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
 ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<meet>.zip"): every swimmer (D1), team
@@ -10,8 +10,8 @@ ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<m
 exported for the same meet: its header (A1, B1, B2) is copied, with today's date and time in A1, and its result lines
 show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
 32, where MM writes 1 for seeded and S for scored), then:
-- E2: the final time; the pad (TP) time; up to three backup times, the lane sheet (SW) times, or the Gen7 buttons
-  when there are none; the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
+- E2: the final time; the pad (TP) time; up to three backup times: the lane sheet (SW) times when the final time comes
+  from them or TP was kept in doubt, otherwise the Gen7 buttons (as Meet Manager writes them for a pad time); the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
   time is not the pad time. A DQ (a slip in OCR_DIR, coded in dq-codes.json) is "Q" with the code in Hy-Tek's form
   (stroke number and letter: BaG -> 2G); a lane sheet no-show is "R"; an entry not seeded in a heat has no result.
 - G1: the Gen7 splits before the finish.
@@ -98,7 +98,7 @@ def main():
         sys.exit(__doc__)
     opt = lambda k, d: args[args.index(k) + 1] if k in args else d  # noqa: E731
     ocr, gen7, entries, template, out = args[:5]
-    tol = round(float(opt("--tolerance", "0.35")) * 100)
+    tol = round(float(opt("--tolerance", "0.30")) * 100)
     codes = ar.load_codes(opt("--codes", ar.DQ_CODES))
     groups = age_groups(opt("--age-groups", "10U,11,12,13,14,15,16,17O"))
     sheets, slips, etd = ar.load(ocr)
@@ -197,7 +197,11 @@ def main():
         e2 = put(e2, 11, "L")
         e2 = put(e2, 12, (s["status"] + s.get("dq", "")).ljust(3))
         e2 = put(e2, 20, f"{s['heat']:3d}{s['lane']:3d}{s.get('heatPlace', 0):3d}{s.get('place', 0):4d}")
-        backups = [v for _, v, _ in res["sw"]][:3] if res["sw"] else button_times(res)
+        # The SW times go in only when the final time comes from them, or TP was kept in doubt; otherwise the Gen7
+        # buttons, as Meet Manager writes them for a pad time.
+        from_tp = res["tp"] is not None and res["final"] == res["tp"] and not res["swOverride"]
+        use_sw = res["sw"] and (not from_tp or res["swDoubt"])
+        backups = [v for _, v, _ in res["sw"]][:3] if use_sw else button_times(res)
         for k in range(3):
             e2 = put(e2, 36 + 8 * k, tm(backups[k] if k < len(backups) else 0))
         # A pad time less than half the final time is a stray touch, which Meet Manager drops.
