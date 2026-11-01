@@ -64,6 +64,9 @@ For every swim (event, heat, lane): **TP**, the touch pad finish (the lane's Gen
 | no | | SW median, thousandths dropped | bad PB if PB is outside tolerance; poor SW time if adding PB moves the median by more than the tolerance |
 | no | no SW times | PB | |
 
+A **no-show** on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has a time; the
+report shows `N/S` as the final time and flags the Gen7 time for correction.
+
 Then it compares the final time with the **Gen7 official time** (noting when that was an underlined push button
 override), and adds the lane sheet's notes and transcription doubts for the line (unreadable, medium or low
 confidence, overwritten times).

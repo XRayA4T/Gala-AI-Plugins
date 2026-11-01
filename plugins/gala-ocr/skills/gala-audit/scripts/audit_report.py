@@ -14,6 +14,7 @@ For every event, heat and lane the report lists the touch pad (TP) time, the pus
   TP time noted as bad;
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
+A no-show on the lane sheet with no SW times is recorded as N/S with no time, even when Gen7 has one.
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
 DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
 Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
@@ -210,6 +211,9 @@ class Audit:
             else:
                 note(f"Poor SW time: {why}; no single timer can be picked out", "warn")
 
+        # A no-show on the lane sheet with no SW times is recorded as N/S, whatever Gen7 has.
+        res["ns"] = bool(row) and row["status"] == "NO_SHOW" and not row["handTimes"]
+        before = len(res["notes"])
         final = None
         if tp is not None:
             if med is None:
@@ -243,6 +247,9 @@ class Audit:
         elif pb is not None:
             final = pb
             note("No TP or SW time; PB used", "warn")
+        if res["ns"]:
+            del res["notes"][before:]
+            final = None
         res["final"] = final
 
         # A single SW time far from the final time is probably a misread or a slip of the pen.
@@ -256,6 +263,9 @@ class Audit:
         if not sheet and official is not None:
             note(f"Gen7 has a time ({fmt(official)}) and there is no lane sheet for event {event} lane {lane} in the "
                  f"scan; the PB/TP check stands alone", "warn")
+        elif res["ns"] and official is not None:
+            note(f"Gen7 has a time ({fmt(official)}) but the lane sheet has a no-show: recorded as N/S with no time",
+                 "serious")
         elif status in ("NO_SHOW", "NO_SWIMMER") and official is not None:
             note(f"Gen7 has a time ({fmt(official)}) but the lane sheet has "
                  + ("a no-show" if status == "NO_SHOW" else "no swimmer"), "serious")
@@ -269,7 +279,7 @@ class Audit:
             d = official - final
             note(f"Gen7 official {fmt(official)} differs from the final time by {fmt(d, True)}s",
                  "serious" if abs(d) > tol else "warn")
-        res["diff"] = None if official is None or final is None else official - final
+        res["diff"] = None if official is None or res["ns"] or final is None else official - final
         if row and row["notes"]:
             note(f"Lane sheet: {row['notes']}")
             if row["status"] == "DISQUALIFIED" or re.search(r"\bDQ\b", row["notes"]):
@@ -446,7 +456,7 @@ def result_row(res, with_event=False):
     return (f'<tr>{lead}<td>{res["heat"]}</td><td>{res["lane"]}</td><td>{swimmer(res)}</td>'
             f'<td>{esc(row.get("team", ""))}</td><td class="t">{race}</td>'
             f'<td class="t">{fmt(res["tp"])}</td><td class="t">{fmt(res["pb"])}</td>{sw_cells(res)}'
-            f'<td class="t">{fmt(res["median"])}</td><td class="t{final_cls}"><b class="final">{fmt(res["final"])}</b></td>'
+            f'<td class="t">{fmt(res["median"])}</td><td class="t{final_cls}"><b class="final">{"N/S" if res["ns"] and res["official"] is not None else fmt(res["final"])}</b></td>'
             f'<td class="t">{fmt(res["official"])}{"<sup>PB</sup>" if res["race"] and any(n.startswith("Gen7 official time is a push") for _, n in res["notes"]) else ""}</td>'
             f'<td class="t{diff_cls}">{fmt(diff, True) if diff is not None else ""}</td>'
             f'<td>{findings(res["notes"])}</td></tr>')
@@ -488,7 +498,11 @@ def build(audit, tol):
         ("Gen7 official time differs from the final time within the tolerance",
          count(lambda r: r["diff"] is not None and 0 < abs(r["diff"]) <= tol)),
         ("Gen7 official time is a push button override", count(lambda r: has(r, "(underlined)"))),
-        ("Gen7 time for a lane the sheet has as empty or a no-show", count(lambda r: has(r, "Gen7 has a time ("))),
+        ("Gen7 time for a no-show on the lane sheet (recorded as N/S, no time)",
+         count(lambda r: has(r, "recorded as N/S"))),
+        ("Gen7 time for a lane the sheet has as empty, or a no-show with SW times",
+         count(lambda r: has(r, "but the lane sheet has a no-show") and not has(r, "recorded as N/S")
+                   or has(r, "but the lane sheet has no swimmer"))),
         ("Swims with lane sheet times but no Gen7 time", count(lambda r: has(r, "Gen7 has no time in this lane")
                                                                  or has(r, "no Gen7 race for this heat"))),
         ("SW time could not be read", count(lambda r: has(r, "could not be read"))),
@@ -515,6 +529,8 @@ def build(audit, tol):
            'bad.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
            'bad PB; if adding PB moves the median by more than the tolerance, an SW time is poor and is named when '
            'it can be picked out. PB alone when there are no SW times.</li>'
+           '<li>A no-show on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has '
+           'one.</li>'
            '<li>The final time is compared with the Gen7 official time (<sup>PB</sup>: Gen7 used a push button '
            'time).</li></ul>',
            '<h2>Summary</h2><table><tr><th>Check</th><th>Count</th></tr>'
