@@ -11,8 +11,8 @@ A Claude Code skill that transcribes scanned swimming-gala paperwork into struct
   report, if you have it, is used to check the numbers.
 
 A second skill, **gen7-report**, reads the session report a Colorado Gen7 timing system prints (one race per page:
-event, heat, race number, start time, places, splits, pad and backup button times, P:B difference, reaction times)
-straight from the PDF's text into JSON or CSV. That report is not scanned, so no OCR is involved.
+event, heat, race number, start time, places, splits, pad and backup button times, which official times the buttons
+overrode, P:B difference, reaction times) straight from the PDF's text into JSON or CSV. That report is not scanned, so no OCR is involved.
 
 Claude reads the scans itself, so no API key, cloud OCR service or Tesseract install is needed. When you have the
 PDF that Meet Manager printed, it takes the printed names, ages, teams and seed times straight from that, character

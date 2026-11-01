@@ -12,17 +12,19 @@ Colorado Gen7 prints a session report with one race per page:
 - the start time, with `(Manual Start)` when the start was not from the starter
 - the results **By Lane** (lane, place, time) and **By Place**
 - a grid, one column per lane: the split rows (cumulative times, with each split in brackets under it), then
-  `Off. Time`, `Button A`, `Button B`, `Button C`, `Backup`, `P:B Diff` (pads against backup, marked `*` by Gen7 when
-  out of tolerance) and `Start Reac:`
+  `Off. Time` (the official time; **underlined when a push button time overrode the touch pad**), `Button A`,
+  `Button B`, `Button C`, `Backup`, `P:B Diff` (pads against backup, marked `*` by Gen7 when out of tolerance) and
+  `Start Reac:`
 
 The PDF is generated, not scanned, so **do not read it by eye or OCR it**: run the bundled script, which reads the
-text layer and puts each value in its lane by its position on the page.
+text layer and puts each value in its lane by its position on the page. The underlines are drawn lines, not text, so
+it also renders the PDF to SVG (poppler's `pdftocairo`) to find them.
 
 ## Use
 
-Needs `python3` and poppler's `pdftotext` (`apt install poppler-utils`, `brew install poppler`); check with
-`which pdftotext python3` and tell the user what to install if either is missing. `$SKILL` is this skill's base
-directory (the folder this SKILL.md is in).
+Needs `python3` and poppler's `pdftotext` and `pdftocairo` (`apt install poppler-utils`, `brew install poppler`);
+check with `which pdftotext pdftocairo python3` and tell the user what to install if any is missing. `$SKILL` is
+this skill's base directory (the folder this SKILL.md is in).
 
 ```
 python3 -I $SKILL/scripts/gen7_report.py "<report>.pdf"               # JSON, every race
@@ -46,14 +48,16 @@ A list of races in report order:
   "lanes": [
     {"lane": 3, "place": 6, "time": "3:28.23",
      "splits": [{"time": "1:40.74", "split": ""}, {"time": "3:28.23", "split": "1:47.49"}],
-     "offTime": "3:28.23", "buttonA": "3:24.36", "buttonB": "", "buttonC": "", "backup": "3:24.36",
-     "pbDiff": "3.87", "pbFlagged": true, "reaction": ""}
+     "offTime": "3:28.23", "buttonOverride": false, "buttonA": "3:24.36", "buttonB": "", "buttonC": "",
+     "backup": "3:24.36", "pbDiff": "3.87", "pbFlagged": true, "reaction": ""}
   ]
 }
 ```
 
 - Only lanes with something recorded are listed. Times are exactly as printed; `""` when blank; `place` is `null`
   when none is printed.
+- `buttonOverride` is true when the Off. Time is underlined: the official time came from the push buttons, overriding
+  the touch pad (usually a missed or soft touch; the lane then has no final pad split, and P:B Diff is 0.00).
 - `splits` are the lane's split rows top to bottom; `split` is the bracketed value under a cumulative time, `""`
   when none is printed.
 - A heat started twice (a false start, a recall) has two races with the same event and heat; events swum together
@@ -65,7 +69,10 @@ Tell the user how many races and lanes were read and where the output went, then
 
 - heats with more than one race (and which race numbers), and any race number missing from the sequence
 - manual starts
-- lanes with `pbFlagged`, or a lane with a place but no time (or the reverse)
+- lanes with `buttonOverride` (how many, and per race), lanes with `pbFlagged`, and a lane with a place but no time
+  (or the reverse)
+- a lane whose Off. Time matches neither its final pad split nor its buttons, without an underline: it may have been
+  typed in by hand
 - any page the script skipped (the count of races should match the report's page count; `pdfinfo` gives it)
 
 If the script fails or a page comes out wrong, the report layout may differ from the one it was written for: show

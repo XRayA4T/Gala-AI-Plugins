@@ -7,13 +7,15 @@ Usage: gen7_report.py REPORT.pdf [--event N] [--csv]
 JSON (default): a list of races in report order:
   {race, page, meet, session, eventNumber, heat, eventDescription, startTime, manualStart, lanes}
 with each lane that has anything recorded:
-  {lane, place, time, splits, offTime, buttonA, buttonB, buttonC, backup, pbDiff, pbFlagged, reaction}
+  {lane, place, time, splits, offTime, buttonOverride, buttonA, buttonB, buttonC, backup, pbDiff, pbFlagged,
+   reaction}
 `place` is an integer or null; times are as printed ("3:41.12"), "" when blank. `splits` lists the lane's split
 rows top to bottom as {time, split}: the cumulative time and, when printed in brackets under it, the split itself.
-`pbDiff` is the printed difference between the pads and the backup buttons; `pbFlagged` is true when Gen7 marked it
-with "*".
+`buttonOverride` is true when the Off. Time is underlined: the official time is a push button time that overrode the
+touch pad. `pbDiff` is the printed difference between the pads and the backup buttons; `pbFlagged` is true when Gen7
+marked it with "*".
 --csv: one row per lane, the race fields repeated and splits joined with "; ".
-Needs poppler's pdftotext.
+Needs poppler's pdftotext and pdftocairo (for the underlines, which are drawn lines, not text).
 """
 import csv
 import html
@@ -21,22 +23,25 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 
 WORD = re.compile(r'<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</word>')
 EVENT = re.compile(r"Event:\s*(\d+)\s+Heat:\s*(\d+)\s+Race\s*#\s*(\d+)")
 TIME = re.compile(r"^\*?-?(\d{1,2}:)?\d{1,2}\.\d{2}$")
+LINE = re.compile(r'<path style="([^"]*)" d="M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) "\s*'
+                  r'(?:transform="matrix\(([^)]*)\)")?')
 LABELS = {"Off. Time": "offTime", "Button A": "buttonA", "Button B": "buttonB", "Button C": "buttonC",
           "Backup": "backup", "P:B Diff": "pbDiff", "Start Reac:": "reaction"}
 
 
 def pages(pdf):
-    """Each page's words as lines: [(y, [(x0, x1, text), ...]), ...] top to bottom."""
+    """Each page's words as lines: [(y, [(x0, x1, text, bottom), ...]), ...] top to bottom."""
     out = subprocess.run(["pdftotext", "-bbox", pdf, "-"], capture_output=True, text=True, check=True).stdout
     for page in out.split("<page ")[1:]:
         lines = []
         for m in WORD.finditer(page):
-            x0, y0, x1, _ = map(float, m.groups()[:4])
-            word = (x0, x1, html.unescape(m.group(5)))
+            x0, y0, x1, y1 = map(float, m.groups()[:4])
+            word = (x0, x1, html.unescape(m.group(5)), y1)
             if lines and abs(lines[-1][0] - y0) < 2.5:
                 lines[-1][1].append(word)
             else:
@@ -56,6 +61,31 @@ def merge_lines(lines):
     return merged
 
 
+def underlines(pdf):
+    """Each page's solid horizontal lines as (x0, x1, y), from an SVG rendering of the PDF."""
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["pdftocairo", "-svg", pdf, f"{tmp}/r.svg"], check=True)
+        with open(f"{tmp}/r.svg", encoding="utf-8") as f:
+            svg = f.read()
+    for page in svg.split("<page>")[1:]:
+        lines = []
+        for m in LINE.finditer(re.sub(r"<symbol.*?</symbol>", "", page, flags=re.S)):
+            style, x0, y0, x1, y1, tf = m.groups()
+            if "dasharray" in style or "stroke:none" in style:
+                continue
+            a, _, _, d, e, f = map(float, (tf or "1,0,0,1,0,0").split(","))
+            if abs(float(y0) - float(y1)) < 0.5:
+                xs = sorted((a * float(x0) + e, a * float(x1) + e))
+                lines.append((xs[0], xs[1], d * float(y0) + f))
+        yield lines
+
+
+def underlined(word, lines):
+    """A line just below the word that runs under most of it."""
+    x0, x1, _, y1 = word
+    return any(y1 - 2 <= y <= y1 + 3 and min(x1, lx1) - max(x0, lx0) > 0.5 * (x1 - x0) for lx0, lx1, y in lines)
+
+
 def text(words):
     return " ".join(w[2] for w in words)
 
@@ -69,7 +99,7 @@ def nearest(w, columns):
     return min(columns, key=lambda k: abs(columns[k] - mid(w)))
 
 
-def race(lines, page_no):
+def race(lines, page_no, rules=()):
     joined = [text(w) for _, w in lines]
     at = next((i for i, t in enumerate(joined) if EVENT.search(t)), None)
     if at is None:
@@ -85,7 +115,7 @@ def race(lines, page_no):
 
     def lane(n):
         return r["lanes"].setdefault(n, {"lane": n, "place": None, "time": "", "splits": [], "offTime": "",
-                                         "buttonA": "", "buttonB": "", "buttonC": "", "backup": "", "pbDiff": "",
+                                         "buttonOverride": False, "buttonA": "", "buttonB": "", "buttonC": "", "backup": "", "pbDiff": "",
                                          "pbFlagged": False, "reaction": ""})
 
     # By Lane table: the left half under "Lane Place Time"; By Place, on the right, repeats it.
@@ -123,6 +153,8 @@ def race(lines, page_no):
                     lane(n)["pbFlagged"] = v.startswith("*")
                     v = v.lstrip("*")
                 lane(n)[key] = v
+                if key == "offTime":
+                    lane(n)["buttonOverride"] = underlined((w[0], w[1], None, w[3]), rules)
             elif not label and v.startswith("(") and lane(n)["splits"]:
                 lane(n)["splits"][-1]["split"] = v.strip("()")
             elif not label and TIME.match(v):
@@ -135,8 +167,8 @@ def race(lines, page_no):
 
 def races(pdf):
     out = []
-    for no, lines in enumerate(pages(pdf), start=1):
-        if lines and (r := race(lines, no)):
+    for no, (lines, rules) in enumerate(zip(pages(pdf), underlines(pdf)), start=1):
+        if lines and (r := race(lines, no, rules)):
             out.append(r)
     return out
 
@@ -152,7 +184,7 @@ def main():
         print(json.dumps(found, indent=1))
         return
     head = ["race", "page", "eventNumber", "heat", "eventDescription", "startTime", "manualStart", "lane", "place",
-            "time", "splits", "offTime", "buttonA", "buttonB", "buttonC", "backup", "pbDiff", "pbFlagged", "reaction"]
+            "time", "splits", "offTime", "buttonOverride", "buttonA", "buttonB", "buttonC", "backup", "pbDiff", "pbFlagged", "reaction"]
     w = csv.writer(sys.stdout)
     w.writerow(head)
     for r in found:
