@@ -5,15 +5,15 @@
     "url": "https://github.com/XRayA4T"
   },
   "metadata": {
-    "description": "Claude Code plugins for running and auditing swimming galas: reading scanned Hy-Tek Meet Manager lane sheets and DQ slips.",
-    "version": "1.0.0"
+    "description": "Claude Code plugins for running and auditing swimming galas: reading scanned Hy-Tek Meet Manager lane sheets, DQ slips and ETD programmes.",
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "gala-ocr",
       "source": "./plugins/gala-ocr",
-      "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) and referees' DQ slips into structured JSON, with no API key or OCR engine needed.",
-      "version": "1.0.0",
+      "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) referees' DQ slips and the race numbers written on an ETD programme into structured JSON, with no API key or OCR engine needed.",
+      "version": "1.1.0",
       "license": "MIT",
       "category": "productivity",
       "keywords": [
@@ -24,7 +24,8 @@
         "ocr",
         "handwriting",
         "lane-sheets",
-        "disqualification"
+        "disqualification",
+        "timing"
       ]
     }
   ]

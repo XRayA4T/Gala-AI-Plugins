@@ -1,20 +1,21 @@
 ---
 name: gala-ocr
-description: Transcribe scanned swimming-gala paperwork into structured JSON - Hy-Tek Meet Manager lane sheets (printed entries plus handwritten timekeeper times, N/S, DQ, soft touch, sign-off) and referees' handwritten disqualification (DQ) slips. Use when asked to OCR, read, transcribe or extract lane sheets, timekeeper / hand times, or DQ slips from scanned PDFs, to fill in or redo a transcription cache (e.g. data/ocr in a GalaAudit project), or to prepare gala results for an audit without calling the Claude API from code.
+description: Transcribe scanned swimming-gala paperwork into structured JSON - Hy-Tek Meet Manager lane sheets (printed entries plus handwritten timekeeper times, N/S, DQ, soft touch, sign-off), referees' handwritten disqualification (DQ) slips, and the ETD programme (the meet programme with the timing system's race data record number written by each heat). Use when asked to OCR, read, transcribe or extract lane sheets, timekeeper / hand times, DQ slips, or race numbers from an ETD programme from scanned PDFs, to fill in or redo a transcription cache (e.g. data/ocr in a GalaAudit project), or to prepare gala results for an audit without calling the Claude API from code.
 ---
 
-# Gala OCR: lane sheets and DQ slips
+# Gala OCR: lane sheets, DQ slips and the ETD programme
 
-You read the scans yourself and write one JSON file per lane sheet and per DQ slip. The format (below) is the
-transcription cache of the GalaAudit Java project (`LaneSheetOcr.OcrPage` and `DqSlip`): when every page of a scan
-has a file there, its audit loads them and makes no Claude API calls. Any other tool can read the files too.
+You read the scans yourself and write one JSON file per lane sheet, per DQ slip and per ETD programme page. The
+lane sheet and DQ slip formats (below) are the transcription cache of the GalaAudit Java project
+(`LaneSheetOcr.OcrPage` and `DqSlip`): when every page of a scan has a file there, its audit loads them and makes no
+Claude API calls. Any other tool can read the files too.
 
 The output feeds an audit of official results. **Accuracy beats completeness: never guess a digit or word you
 cannot see.** Mark it low confidence, or leave `normalized` empty, and say so in your summary.
 
 ## Setup
 
-**Helpers.** `scripts/` in this skill's base directory (the folder this SKILL.md is in) holds two Python 3 scripts
+**Helpers.** `scripts/` in this skill's base directory (the folder this SKILL.md is in) holds Python 3 scripts
 (standard library only). Call them by absolute path as `python3 -I <skill dir>/scripts/<script>.py`; below,
 `$SKILL` means that directory.
 
@@ -29,6 +30,8 @@ install rather than working around it.
 | Scanned lane sheets | `pdf/scanned/Lane Sheets.pdf` (any scan whose pages are lane sheets) |
 | Scanned DQ slips | `pdf/scanned/DQs.pdf` |
 | Original print of the lane sheets (the PDF Meet Manager printed; optional but much more accurate) | `pdf/original/*.pdf` |
+| Scanned ETD programme (the meet programme with race numbers written on it) | `pdf/scanned/ETD.pdf` |
+| Timing system race report (optional; checks the race numbers) | `pdf/original/*Session*.pdf` |
 | Output folder (the cache) | `data/ocr/` |
 
 If none of these exist and the user has not said, ask for the scan(s) and an output folder. Render images into
@@ -38,6 +41,7 @@ your scratchpad or a temp folder, never into the user's project.
 
 - Lane sheet: `<scan>-event%02d-lane%d-p%03d.json`, e.g. `Lane Sheets-event01-lane4-p004.json`
 - DQ slip: `<scan>-event%02d-heat%d-lane%d-p%03d.json`, named for the slip's **front** page, e.g. `DQs-event08-heat1-lane2-p008.json`
+- ETD programme page: `<scan>-p%03d.json`, e.g. `ETD-p001.json`
 
 A page is done when any file of that scan in the output folder ends in its `-pNNN.json` (a DQ back page is done when
 a slip lists it as `backPage`). **Start by listing the output folder and skip finished pages**, unless the user asks
@@ -91,6 +95,10 @@ For each page not yet done:
 - **Written-in names.** If the printed name is crossed out and another written in, or a name is written on an empty
   row, set `swimmerName` to the written name (keep the printed `age`, `team`, `seedTime`) and start `notes` with
   `printed name <printed name> crossed out` or `name written in`.
+- **Scan and original disagree.** The original print may have been made later (after scratchings), so a row can
+  be empty there but have a swimmer printed on the scanned paper. The handwriting belongs to the paper: take that
+  row's printed fields from the scan, give it the status its handwriting shows (usually `NO_SHOW`), and add
+  `printed on the scan but not in the original print` to `notes`. Same for any other printed field that differs.
 - `checkedIn`: a handwritten tick by the swimmer's name. `softTouch`: the Soft Touch box is ticked.
 - `notes`: any other handwriting on the row that is not a time, verbatim (a written DQ code may be matched against
   the meet's codes), separated with `; `. Empty string when none.
@@ -174,6 +182,86 @@ Example (names are made up):
 }
 ```
 
+## ETD programme
+
+The ETD programme is the Meet Manager meet programme (`#3 Men 100 LC Meter Backstroke`, then `Heat 1 of 9 Finals
+Starts at 09:08 AM` and its lanes, two or three columns to a page) on which the timing operator has written, circled
+or not, the **race data record number** beside each heat: the number the timing system (e.g. Colorado Gen7) gave
+the race. It links each programme heat to its record in the timing system. The numbers mostly rise by one per heat,
+but not always: a heat started twice (a false start, a re-swim) gets two numbers, or only the second is written;
+events swum together as one race share a number; and a heat not swum has none, or a crossed-out one.
+
+Check the scan is the one the user named (`pdfinfo` for the page count and size). If it is missing, ask; don't pick
+another file that looks likely. For each page not yet done:
+
+1. **Look at the page.** `pdftoppm -r 110 -png -f P -l P "<scan>.pdf" <tmp>/etd` and read the PNG to find the
+   columns and heat headers.
+2. **Read every heat header and every number, column by column at 200 dpi.** An A4 page at 200 dpi is about
+   1650 x 2340 px; crop one column at a time with some overlap, since numbers are often written across the age and
+   team columns or in the gutter: e.g. `pdftoppm -r 200 -png -f P -l P -x 0 -y 200 -W 600 -H 1100`, then step `-x`
+   by about 540 for the next column (fewer, wider steps for two columns) and `-y` by about 1000 for the lower half. Zoom to 300 dpi on any number you are not sure
+   of.
+3. **If there is a Gen7 race report** (the session report the timing system prints), read it with the
+   gen7-report skill's script, `python3 -I $SKILL/../gen7-report/scripts/gen7_report.py <report>.pdf` (each race's
+   number, event, heat, start time and lanes). Use it to check each number and to tell which heat a number beside a
+   column break belongs to, never to fill in a number that is not written, and never to raise the confidence of a
+   digit that is hard to read. Races with no finishes (a manual or false start, e.g. race 1 before race 2 of the same
+   heat) usually have no number written: note them in your summary, don't add them to `written`.
+4. **Write the file** (shape below), then validate it.
+
+### ETD programme rules
+
+- `heats` lists **every heat whose header is printed on this page**, in printed order (down each column, columns
+  left to right), with or without a number. A heat whose lanes run on to the next column or page is still listed
+  once, on the page of its header.
+- A number belongs to the heat whose lanes it sits beside. One written in the gutter between columns, or beside a
+  heat header, belongs to the heat it is level with; if it is level with heats in both columns, use the race report
+  and the sequence of numbers either side to decide, and say so in `notes`.
+- `written` keeps exactly what is written (`"7"`, `"11"`), `""` when nothing is. `raceNumber` is that number as an
+  integer, or `null` when nothing is written, a digit cannot be read (then `confidence` is `LOW`), or every number
+  written is crossed out with none rewritten (a heat not swum: `corrected: true`, confidence as legible, and the
+  words beside it, such as `"NO START"`, in `notes`).
+- Stray marks in another pen or style (a lone uncircled digit by a header when the rest are circled, a tick) are
+  not race numbers: put them in `notes`.
+- **Combined events** (two events swum as one race, e.g. a men's and a women's 200 fly in one heat) **have the same
+  race number**. List each event's heat with that number, and say in each one's `notes` which heat it was swum with
+  (`"combined with event 2 heat 1"`). When the number is written once for both (beside one, or with a bracket or
+  arrow joining them), give it to both, and to the one it is not written beside add `"number written at event 1
+  heat 1"` to `notes`. The race report shows a combined race under one event only, and the other event may not
+  appear in it at all: match the race's lanes with a time against the programme's lanes to see which heats were in
+  it.
+- **Two or more numbers on one heat** (a re-swim): `written` gives them all, top to bottom, separated by `, `;
+  `raceNumber` is the one not crossed out, or the last one when none is; `notes` says what you saw
+  (`"1 crossed out, 2 written beside it"`).
+- **Corrections:** crossed out or overwritten and rewritten → `corrected: true`, and the final number.
+- **Confidence:** `HIGH` every digit is unambiguous; `MEDIUM` readable, but one digit could be another (1/7, 4/9,
+  6/0, 3/8, a circle hiding part of a digit); `LOW` you are guessing, or there is a mark you cannot read. Writing
+  over the printed text does not lower the confidence by itself; only a digit it makes ambiguous does.
+- `notes`: anything else written by the heat that bears on its race number, verbatim (`"no race"`, a time, an
+  arrow to another heat), and any disagreement with the race report (`"race report has race 4 for event 3 heat
+  2"`). Empty string when none.
+- Every field is present; `raceNumber` is the only one that may be `null`. No other fields.
+
+```json
+{
+  "sourceFile": "ETD.pdf",
+  "page": 1,
+  "meetName": "Example Gala 1 - 2026",
+  "heats": [
+    {"eventNumber": 1, "heat": 1, "written": "1, 2", "raceNumber": 2, "corrected": true, "confidence": "HIGH",
+     "notes": "1 crossed out, 2 written beside it"},
+    {"eventNumber": 2, "heat": 1, "written": "2", "raceNumber": 2, "corrected": false, "confidence": "HIGH",
+     "notes": "combined with event 1 heat 1"},
+    {"eventNumber": 3, "heat": 1, "written": "3", "raceNumber": 3, "corrected": false, "confidence": "HIGH",
+     "notes": ""},
+    {"eventNumber": 3, "heat": 2, "written": "", "raceNumber": null, "corrected": false, "confidence": "HIGH",
+     "notes": ""}
+  ]
+}
+```
+
+`meetName` is the meet name as printed in the page heading (`"CGA Summer 2 - 2026"`).
+
 ## Validate and report
 
 Run the validator on what you wrote (or the whole output folder) and fix every problem it reports. Readers such as
@@ -183,9 +271,11 @@ GalaAudit reject unknown or missing fields, and a wrong file name makes a page l
 python3 -I $SKILL/scripts/validate_cache.py <output folder>
 ```
 
-Then tell the user how many lane-sheet pages and DQ slips you wrote (and how many you skipped as already done), and
-list for checking against the paper: every `LOW` or empty-`normalized` time, every row with `corrected` times or a
-written-in name, `N/S` and `DQ` rows, unsigned sheets, and any slip field you could not read. In a GalaAudit project,
+Then tell the user how many lane-sheet pages, DQ slips and ETD pages you wrote (and how many you skipped as already
+done), and list for checking against the paper: every `LOW` or empty-`normalized` time, every row with `corrected`
+times or a written-in name, `N/S` and `DQ` rows, unsigned sheets, any slip field you could not read, and every ETD
+heat with no number, a `LOW` or `MEDIUM` number, more than one number, or a number that disagrees with the race
+report or with the numbers either side. In a GalaAudit project,
 mention that the audit can now be run as usual (`AuditMain`).
 
 With many pages (a gala's lane-sheet scan can run past 100 pages), work in batches of about 8 pages, writing files

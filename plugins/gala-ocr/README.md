@@ -6,6 +6,13 @@ A Claude Code skill that transcribes scanned swimming-gala paperwork into struct
   timekeeper times per heat, check-in ticks, `N/S` and `DQ`, the Soft Touch box, and the timekeeper's signature.
 - **DQ slips**: referees' handwritten disqualification reports (event, heat, lane, the infraction in the official's
   words, names, signatures, announcement time), including what's written on the back.
+- **ETD programme**: the meet programme on which the timing operator has written the race data record number beside
+  each heat, linking each heat to its record in the timing system (e.g. Colorado Gen7). The timing system's race
+  report, if you have it, is used to check the numbers.
+
+A second skill, **gen7-report**, reads the session report a Colorado Gen7 timing system prints (one race per page:
+event, heat, race number, start time, places, splits, pad and backup button times, P:B difference, reaction times)
+straight from the PDF's text into JSON or CSV. That report is not scanned, so no OCR is involved.
 
 Claude reads the scans itself, so no API key, cloud OCR service or Tesseract install is needed. When you have the
 PDF that Meet Manager printed, it takes the printed names, ages, teams and seed times straight from that, character
@@ -33,7 +40,11 @@ Ask in plain words, or run `/gala-ocr`:
 
 > Read the DQ slips in `scans/DQs.pdf`.
 
+> Read the race numbers on the ETD programme in `scans/ETD.pdf`, checking them against the Gen7 race report.
+
 > Redo pages 12 to 15 of the lane sheets.
+
+> Parse the Gen7 session report `CGA Summer 2 - Session 1.pdf` into CSV.
 
 Claude works through the scan in batches, writes one JSON file per sheet or slip as it goes, and checks every
 file with the bundled validator. Then it lists everything a person should check against the paper: low-confidence
@@ -121,7 +132,8 @@ Copy the example PDFs into an empty folder, open Claude Code there, and ask:
 > read the DQ slip in `dq-slip.pdf`.
 
 Then compare `out/` with `examples/expected/`. The file names follow `<scan>-event%02d-lane%d-p%03d.json` for lane
-sheets and `<scan>-event%02d-heat%d-lane%d-p%03d.json` for DQ slips (named for the slip's front page). The full
+sheets, `<scan>-event%02d-heat%d-lane%d-p%03d.json` for DQ slips (named for the slip's front page) and
+`<scan>-p%03d.json` for ETD programme pages. The full
 field rules are in [`skills/gala-ocr/SKILL.md`](skills/gala-ocr/SKILL.md).
 
 ## Bundled scripts
@@ -129,9 +141,10 @@ field rules are in [`skills/gala-ocr/SKILL.md`](skills/gala-ocr/SKILL.md).
 | Script | Does |
 |---|---|
 | `scripts/original_sheets.py ORIGINAL.pdf [EVENT [LANE]]` | Prints the lane sheets exactly as Meet Manager printed them, as JSON, from the original (digital) PDF |
+| `../gen7-report/scripts/gen7_report.py REPORT.pdf [--event N] [--csv]` | Reads a Colorado Gen7 session report into JSON (per race) or CSV (per lane): places, times, splits, Off. Time, buttons, backup, P:B Diff, reaction; also used to check ETD race numbers |
 | `scripts/validate_cache.py FILE_OR_DIR...` | Checks transcription files have exactly the expected fields, types, values and file names; exits 1 on any problem |
 
-Both need only the Python standard library (plus `pdftotext` for the first) and can be run on their own.
+All need only the Python standard library (plus `pdftotext` for the PDF readers) and can be run on their own.
 
 ## Accuracy
 

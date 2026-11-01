@@ -1,8 +1,8 @@
 {
   "name": "gala-ocr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
-  "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) and referees' DQ slips into structured JSON, with no API key or OCR engine needed.",
+  "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) referees' DQ slips and the race numbers written on an ETD programme into structured JSON, with no API key or OCR engine needed.",
   "author": {
     "name": "Raymond Barbour",
     "url": "https://github.com/XRayA4T"
@@ -17,6 +17,7 @@
     "ocr",
     "handwriting",
     "lane-sheets",
-    "disqualification"
+    "disqualification",
+    "timing"
   ]
 }
