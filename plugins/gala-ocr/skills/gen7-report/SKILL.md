@@ -57,7 +57,8 @@ A list of races in report order:
 - Only lanes with something recorded are listed. Times are exactly as printed; `""` when blank; `place` is `null`
   when none is printed.
 - `buttonOverride` is true when the Off. Time is underlined: the official time came from the push buttons, overriding
-  the touch pad (usually a missed or soft touch; the lane then has no final pad split, and P:B Diff is 0.00).
+  the touch pad (usually a missed or soft touch; P:B Diff is 0.00). The lane may have no finish split, or Gen7 may
+  copy the button time into it: a finish split equal to the Off. Time of an override lane is not a pad touch.
 - `splits` are the lane's split rows top to bottom; `row` is the grid row (one per 100 m, or one for a 50), so a
   missing split leaves a gap, and the race's last row is the finish: a lane's touch pad finish time is its split on
   that row. `split` is the bracketed value under a cumulative time, `""` when none is printed.

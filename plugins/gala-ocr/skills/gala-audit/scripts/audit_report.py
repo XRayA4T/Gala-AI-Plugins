@@ -183,6 +183,9 @@ class Audit:
             official = hundredths(gl["offTime"])
             if gl["buttonOverride"]:
                 note("Gen7 official time is a push button time (underlined)")
+                # Gen7 may copy the override into the finish split; a finish split equal to it is no pad touch.
+                if tp is not None and tp == official:
+                    tp = None
         sw = []
         if row:
             for t in row["handTimes"]:
@@ -522,7 +525,8 @@ def build(audit, tol):
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<h2>How the final time is chosen</h2><ul>'
-           '<li><b>TP</b> is the touch pad finish (the Gen7 split on the race\'s last row), <b>PB</b> the push button '
+           '<li><b>TP</b> is the touch pad finish (the Gen7 split on the race\'s last row, unless it is the same as an '
+           'underlined button override, which Gen7 copies into it), <b>PB</b> the push button '
            'backup time, <b>SW</b> the lane sheet (stopwatch) times; the SW median of two is their mean.</li>'
            '<li>With a TP time: TP when it is within the tolerance of the SW median (a PB outside it is a bad PB); TP '
            'when it agrees with PB but not the SW median (poor SW times); otherwise the SW median, and the TP time is '

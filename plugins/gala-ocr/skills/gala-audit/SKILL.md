@@ -79,7 +79,9 @@ birth and registration numbers: keep it in the user's project, and delete any te
 
 ## What it works out
 
-For every swim (event, heat, lane): **TP**, the touch pad finish (the lane's Gen7 split on the race's last row);
+For every swim (event, heat, lane): **TP**, the touch pad finish (the lane's Gen7 split on the race's last row; none
+when the Off. Time is an underlined button override and that split is the same time, since Gen7 copies the
+button time into it);
 **PB**, the push button backup time; **SW**, every lane sheet time; then the **final time**:
 
 | TP | Condition (tolerance 0.35s) | Final | Note |
