@@ -33,6 +33,8 @@ the back) against the list and write `<ocr folder>/dq-codes.json`:
 - When no code fits exactly, give the closest and say why in `note`; when two apply, give the main one and name the
   other in `note`. Use `""` for `code` when you can't tell, rather than guess.
 - List the codes with a `note` in your report back, for the referee to confirm.
+- Write codes in the FINA style (`BaG`, `BfG`) everywhere people read them: the report, summaries, answers. The
+  Hy-Tek form (`2G`, `4G`) belongs only inside the .hy3 file; don't give both.
 
 The report shows each slip's code and description, and flags a code that is not in the list, one whose group cannot
 happen in the event (a backstroke code in a butterfly race), an IM code on the wrong leg's stroke, and a slip whose
@@ -64,7 +66,11 @@ Every entry gets its team, swimmer and entry lines copied from the entries file 
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, the lane sheet times as backup times (the Gen7 buttons when there are none), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
-form (stroke number and letter: BaG is `2G`, IMB `5B`; Meet Manager stores and exports the code this way and shows it as BaG), no-shows, and the Gen7 splits. The A1 header line is the
+form (stroke number and letter: BaG is `2G`, BfG `4G`, IMB `5B`; Meet Manager stores and exports codes this way,
+even one entered as BfG, and shows them in the FINA style), no-shows, and the Gen7 splits. Every event is marked
+done, and done-event details follow Meet Manager's own export (the course and a `0` in column 100 on every result,
+no pad time when the pad touch is less than half the final time); for one event this was checked line for line
+against Meet Manager's export of the same results. The A1 header line is the
 template's with today's date. Name the output like Meet Manager's (`Merge Meet Results-<meet>-<date>-audit.hy3`).
 
 Report what the script prints (swims it moved to the lane sheet's swimmer, swims with no time, lane sheet swimmers
