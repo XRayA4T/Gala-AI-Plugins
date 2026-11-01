@@ -8,7 +8,8 @@ Usage: merge_results.py OCR_DIR GEN7_REPORT.pdf ENTRIES.hy3 RESULTS.hy3 OUT.hy3 
 ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<meet>.zip"): every swimmer (D1), team
 (C1) and entry (E1), with the heat and lane each was seeded in (E2). RESULTS.hy3 is a merge results file Meet Manager
 exported for the same meet: its header (A1, B1, B2) is copied, with today's date and time in A1, and its result lines
-show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3, then:
+show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
+32, where MM writes 1 for seeded and S for scored), then:
 - E2: the final time; the pad (TP) time; up to three backup times, the lane sheet (SW) times, or the Gen7 buttons
   when there are none; the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
   time is not the pad time. A DQ (a slip in OCR_DIR, coded in dq-codes.json) is "Q" with the code in Hy-Tek's form
@@ -184,7 +185,8 @@ def main():
 
     lines = [out_line(stamp(tpl[0]))] + [out_line(ln) for ln in tpl[1:3]]
     for s in sorted(swims, key=lambda s: s["event"]):
-        lines += [out_line(s["c1"]), out_line(s["d1"]), out_line(s["e1"])]
+        # E1 column 32 is the event's status in Meet Manager: 1 seeded, S scored, A done. Every event is done.
+        lines += [out_line(s["c1"]), out_line(s["d1"]), out_line(put(s["e1"], 31, "A"))]
         if not s["heat"]:
             e2 = unseeded or put(put(base, 3, tm(0)), 11, " ")
             lines.append(out_line(put(e2, 87, meet_date)))

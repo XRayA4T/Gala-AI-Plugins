@@ -60,7 +60,8 @@ results file Meet Manager exported for this meet (its header and layout are copi
 python3 -I $SKILL/scripts/merge_results.py <ocr folder> "<gen7 report>.pdf" <entries>.hy3 "<merge results>.hy3" "<out>.hy3"
 ```
 
-Every entry gets its team, swimmer and entry lines copied from the entries file, then its result: the final time,
+Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
+Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, the lane sheet times as backup times (the Gen7 buttons when there are none), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
 form (stroke number and letter: BaG is `2G`, IMB `5B`), no-shows, and the Gen7 splits. The A1 header line is the
