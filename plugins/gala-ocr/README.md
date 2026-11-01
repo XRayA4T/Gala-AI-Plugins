@@ -14,6 +14,11 @@ A second skill, **gen7-report**, reads the session report a Colorado Gen7 timing
 event, heat, race number, start time, places, splits, pad and backup button times, which official times the buttons
 overrode, P:B difference, reaction times) straight from the PDF's text into JSON or CSV. That report is not scanned, so no OCR is involved.
 
+A third skill, **gala-audit**, puts it all together in one HTML report: every swim by event, heat and lane with its
+touch pad, push button and stopwatch times, the final time worked out from them (0.35s tolerance), the Gen7 official
+time and audit notes (bad touch pad, bad push button, poor stopwatch times), DQ slips checked against the lane
+sheets and Gen7, and lane sheet findings.
+
 Claude reads the scans itself, so no API key, cloud OCR service or Tesseract install is needed. When you have the
 PDF that Meet Manager printed, it takes the printed names, ages, teams and seed times straight from that, character
 for character, and only has to read the handwriting.
@@ -143,6 +148,7 @@ field rules are in [`skills/gala-ocr/SKILL.md`](skills/gala-ocr/SKILL.md).
 | `scripts/original_sheets.py ORIGINAL.pdf [EVENT [LANE]]` | Prints the lane sheets exactly as Meet Manager printed them, as JSON, from the original (digital) PDF |
 | `../gen7-report/scripts/gen7_report.py REPORT.pdf [--event N] [--csv]` | Reads a Colorado Gen7 session report into JSON (per race) or CSV (per lane): places, times, splits, Off. Time, buttons, backup, P:B Diff, reaction; also used to check ETD race numbers |
 | `scripts/check_etd.py ETD_DIR REPORT.pdf` | Checks ETD race numbers run in sequence, that the gaps are Gen7 races with no finishes, and that each number's Gen7 race is that heat (or one combined with it) |
+| `../gala-audit/scripts/audit_report.py OCR_DIR REPORT.pdf OUT.html` | Builds the gala audit report from the transcriptions and the Gen7 report |
 | `scripts/validate_cache.py FILE_OR_DIR...` | Checks transcription files have exactly the expected fields, types, values and file names; exits 1 on any problem |
 
 All need only the Python standard library (plus `pdftotext` for the PDF readers) and can be run on their own.

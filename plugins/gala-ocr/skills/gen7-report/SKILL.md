@@ -47,7 +47,7 @@ A list of races in report order:
   "startTime": "Saturday, 31 October 2026 10:48:50", "manualStart": false,
   "lanes": [
     {"lane": 3, "place": 6, "time": "3:28.23",
-     "splits": [{"time": "1:40.74", "split": ""}, {"time": "3:28.23", "split": "1:47.49"}],
+     "splits": [{"row": 1, "time": "1:40.74", "split": ""}, {"row": 2, "time": "3:28.23", "split": "1:47.49"}],
      "offTime": "3:28.23", "buttonOverride": false, "buttonA": "3:24.36", "buttonB": "", "buttonC": "",
      "backup": "3:24.36", "pbDiff": "3.87", "pbFlagged": true, "reaction": ""}
   ]
@@ -58,8 +58,9 @@ A list of races in report order:
   when none is printed.
 - `buttonOverride` is true when the Off. Time is underlined: the official time came from the push buttons, overriding
   the touch pad (usually a missed or soft touch; the lane then has no final pad split, and P:B Diff is 0.00).
-- `splits` are the lane's split rows top to bottom; `split` is the bracketed value under a cumulative time, `""`
-  when none is printed.
+- `splits` are the lane's split rows top to bottom; `row` is the grid row (one per 100 m, or one for a 50), so a
+  missing split leaves a gap, and the race's last row is the finish: a lane's touch pad finish time is its split on
+  that row. `split` is the bracketed value under a cumulative time, `""` when none is printed.
 - A heat started twice (a false start, a recall) has two races with the same event and heat; events swum together
   as one race appear under one event only. Don't merge or drop races: report them as they are.
 

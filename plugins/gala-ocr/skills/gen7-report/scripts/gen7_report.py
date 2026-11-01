@@ -10,7 +10,8 @@ with each lane that has anything recorded:
   {lane, place, time, splits, offTime, buttonOverride, buttonA, buttonB, buttonC, backup, pbDiff, pbFlagged,
    reaction}
 `place` is an integer or null; times are as printed ("3:41.12"), "" when blank. `splits` lists the lane's split
-rows top to bottom as {time, split}: the cumulative time and, when printed in brackets under it, the split itself.
+rows top to bottom as {row, time, split}: the split row (1 = top; one row per 100 m, or one for a 50), the
+cumulative time and, when printed in brackets under it, the split itself. The finish is the race's last row.
 `buttonOverride` is true when the Off. Time is underlined: the official time is a push button time that overrode the
 touch pad. `pbDiff` is the printed difference between the pads and the backup buttons; `pbFlagged` is true when Gen7
 marked it with "*".
@@ -139,11 +140,14 @@ def race(lines, page_no, rules=()):
     lane_cols = {int(gw[i + 1][2]): (gw[i][0] + gw[i + 1][1]) / 2 for i in range(len(gw) - 1)
                  if gw[i][2] == "Lane" and gw[i + 1][2].isdigit()}
     first = min(w[0] for w in gw)
+    row = 0
     for _, words in lines[grid + 1:]:
         label = text([w for w in words if w[1] < first - 2 and not TIME.match(w[2].strip("()"))])
         values = [w for w in words if not (w[1] < first - 2 and not TIME.match(w[2].strip("()")))]
         if label.startswith("Gen7"):
             break
+        if not label and any(TIME.match(w[2]) for w in values):
+            row += 1
         for w in values:
             v = w[2]
             n = nearest(w, lane_cols)
@@ -158,7 +162,7 @@ def race(lines, page_no, rules=()):
             elif not label and v.startswith("(") and lane(n)["splits"]:
                 lane(n)["splits"][-1]["split"] = v.strip("()")
             elif not label and TIME.match(v):
-                lane(n)["splits"].append({"time": v, "split": ""})
+                lane(n)["splits"].append({"row": row, "time": v, "split": ""})
     blank = lane(0)
     del r["lanes"][0]
     r["lanes"] = [r["lanes"][k] for k in sorted(r["lanes"]) if {**r["lanes"][k], "lane": 0} != blank]
@@ -189,9 +193,9 @@ def main():
     w.writerow(head)
     for r in found:
         for ln in r["lanes"]:
-            row = {**r, **ln, "splits": "; ".join(s["time"] + (f" ({s['split']})" if s["split"] else "")
-                                                   for s in ln["splits"])}
-            w.writerow([row[k] for k in head])
+            out = {**r, **ln, "splits": "; ".join(f"{s['row']}: {s['time']}" + (f" ({s['split']})" if s["split"] else "")
+                                                  for s in ln["splits"])}
+            w.writerow([out[k] for k in head])
 
 
 if __name__ == "__main__":
