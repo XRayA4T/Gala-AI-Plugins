@@ -2,7 +2,7 @@
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
 Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.30] [--codes DQ_CODES.txt]
-                       [--scan-url "SCAN.pdf=URL" ...]
+                       [--scans DIR] [--scan-dpi 90] [--scan-quality 40]
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
 (<scan>-eventEE-heatH-laneL-pPPP.json) and ETD programme pages (<scan>-pPPP.json). The ETD race numbers link each
@@ -24,15 +24,19 @@ Codes are checked against the DQ code list (default: the FINA list in ../data/dq
 group must be one that can happen in the event. Codes written in a lane sheet's notes are checked the same way.
 It also checks DQ slips against the lane sheets and Gen7, lane sheet DQ marks against the slips, and repeats the
 lane sheet findings (unsigned sheets, unreadable or corrected times). Needs the gen7-report skill next to this one.
-Every section starts collapsed. Each swim links to its lane sheet and DQ slips in the report, and each sheet and slip
-to its page of the scan: <scan>.pdf#page=N next to the report, or the URL given with --scan-url for that scan.
+Every section starts collapsed. Each swim links to its lane sheet and DQ slips in the report. The report is self-
+contained: each lane sheet and DQ slip row carries its scanned page as an embedded grayscale JPEG (collapsed under
+the row), drawn with poppler's pdftoppm from <scan>.pdf in --scans DIR (default: OCR_DIR's parent, then OCR_DIR) at
+--scan-dpi and --scan-quality. A scan that can't be found is skipped with a warning; its rows show the page only.
 """
 import csv
 import html
 import json
 import pathlib
 import re
-import urllib.parse
+import base64
+import subprocess
+import tempfile
 import statistics
 import sys
 from collections import defaultdict
@@ -440,6 +444,8 @@ details > summary h2, details > summary h3 { display:inline; margin:0; }
 .bar button { font:inherit; padding:3px 10px; border:1px solid var(--line); border-radius:4px; background:var(--head);
               color:var(--fg); cursor:pointer; }
 .links a { white-space:nowrap; margin-right:6px; }
+tr.scan > td { padding:0 8px 6px; border-bottom:1px solid var(--line); }
+tr.scan img { display:block; max-width:100%; height:auto; margin:6px 0; border:1px solid var(--line); background:#fff; }
 tr:target, tr.hit { outline:2px solid var(--warn-fg); outline-offset:-2px; }
 @media print { body { max-width:none; } h2 { break-after:avoid; } tr { break-inside:avoid; } .bar { display:none; } }
 """
@@ -483,10 +489,50 @@ def slip_id(slip):
     return "dq-" + re.sub(r"[^A-Za-z0-9]+", "-", slip["_file"].removesuffix(".json")).strip("-")
 
 
-def scan_link(urls, doc, label=None):
-    url = urls.get(doc["_scan"]) or urllib.parse.quote(doc["_scan"])
-    return (f'<a href="{esc(url)}#page={doc["_page"]}" '
-            f'title="{esc(doc["_scan"])} page {doc["_page"]}">{label or "p" + str(doc["_page"])}</a>')
+class Scans:
+    """Scanned pages as embedded JPEG data URIs, rendered once each with pdftoppm."""
+
+    def __init__(self, dirs, dpi=90, quality=40):
+        self.dirs, self.dpi, self.quality, self.cache, self.missing = dirs, dpi, quality, {}, set()
+
+    def image(self, scan, page):
+        if (scan, page) not in self.cache:
+            pdf = next((d / scan for d in self.dirs if (d / scan).is_file()), None)
+            if pdf is None:
+                if scan not in self.missing:
+                    print(f"Warning: {scan} not found in {', '.join(map(str, self.dirs))}; its pages are not embedded",
+                          file=sys.stderr)
+                    self.missing.add(scan)
+                self.cache[(scan, page)] = None
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    subprocess.run(["pdftoppm", "-gray", "-jpeg", "-jpegopt", f"quality={self.quality}", "-r", str(self.dpi),
+                                    "-f", str(page), "-l", str(page), "-singlefile", str(pdf), f"{tmp}/p"], check=True)
+                    data = pathlib.Path(tmp, "p.jpg").read_bytes()
+                self.cache[(scan, page)] = "data:image/jpeg;base64," + base64.b64encode(data).decode()
+        return self.cache[(scan, page)]
+
+
+def scan_id(row_id):
+    return "scan-" + row_id
+
+
+def page_link(scans, doc, row_id):
+    """The page number, linking to the row's embedded scan when there is one."""
+    label = f'p{doc["_page"]}'
+    if not scans.image(doc["_scan"], doc["_page"]):
+        return label
+    return f'<a href="#{scan_id(row_id)}" title="{esc(doc["_scan"])} page {doc["_page"]}">{label}</a>'
+
+
+def scan_row(scans, doc, row_id, cols):
+    """A full-width row under a sheet or slip with its scanned page, collapsed."""
+    src = scans.image(doc["_scan"], doc["_page"])
+    if not src:
+        return ""
+    return (f'<tr class="scan"><td colspan="{cols}"><details><summary class="muted">Scan: {esc(doc["_scan"])} page '
+            f'{doc["_page"]}</summary><img id="{scan_id(row_id)}" src="{src}" loading="lazy" '
+            f'alt="{esc(doc["_scan"])} page {doc["_page"]}"></details></td></tr>')
 
 
 def findings(notes, levels=("serious", "warn", "minor")):
@@ -568,8 +614,7 @@ def code_cell(audit, slip):
     return f'<b>{esc(code)}</b> <span class="muted">{esc(text)}</span>{note}'
 
 
-def build(audit, tol, urls=None):
-    urls = urls or {}
+def build(audit, tol, scans):
     results = audit.results()
     slip_rows, missing = audit.dq_findings(results)
     allres = [r for rs in results.values() for r in rs]
@@ -648,7 +693,7 @@ def build(audit, tol, urls=None):
 
     dq = [f'<p class="muted">A slip is checked against the lane sheet (is there a swimmer, and did they swim?), Gen7 '
           f'(a finish in that lane) and the event (an infraction or DQ code that cannot happen in it). Event, heat '
-          f'and lane go to the swim; the slip page opens the scan.</p><div class="wrap"><table><tr><th>Event</th>'
+          f'and lane go to the swim; the slip page opens its scan, under the row.</p><div class="wrap"><table><tr><th>Event</th>'
           f'<th>Heat</th><th>Lane</th><th>Slip</th><th>Swimmer (lane sheet)</th><th>Team</th><th>Infraction</th>'
           f'<th>Code</th><th>Official</th><th>Referee</th><th>Announced</th><th>Findings</th></tr>']
     for s, row, f in slip_rows:
@@ -657,11 +702,11 @@ def build(audit, tol, urls=None):
         who = esc(row["swimmerName"]) if row and row["swimmerName"] else '<span class="muted">none</span>'
         sheet = f' <a href="#{sheet_id(e, ln)}" class="muted">sheet</a>' if (e, ln) in audit.sheets else ""
         dq.append(f'<tr id="{slip_id(s)}"><td><a {swim}>{e}</a></td><td><a {swim}>{h}</a></td><td><a {swim}>{ln}</a>'
-                  f'</td><td>{scan_link(urls, s)}</td><td>{who}{sheet}</td><td>{esc(row["team"]) if row else ""}</td>'
+                  f'</td><td>{page_link(scans, s, slip_id(s))}</td><td>{who}{sheet}</td><td>{esc(row["team"]) if row else ""}</td>'
                   f'<td>{esc(s["infraction"])}{"<br><span class=muted>Back: " + esc(s["back"]) + "</span>" if s["back"] else ""}</td>'
                   f'<td>{code_cell(audit, s)}</td>'
                   f'<td>{esc(s["official"])}</td><td>{esc(s["referee"])}</td><td class="t">{esc(s["announcementTime"])}</td>'
-                  f'<td>{findings(f)}</td></tr>')
+                  f'<td>{findings(f)}</td></tr>' + scan_row(scans, s, slip_id(s), 12))
     dq.append("</table></div>")
     if missing:
         nos = ('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>Swimmer</th>'
@@ -696,7 +741,8 @@ def build(audit, tol, urls=None):
     out.append(section("results", "Full result review", "".join(review),
                        f' <span class="badge minor">{len(results)} events</span>'))
 
-    sheets = ['<p class="muted">The event goes to its results, the page opens the scan, and a heat goes to the swim.'
+    sheets = ['<p class="muted">The event goes to its results, the page opens its scan under the row, and a heat goes to '
+              'the swim.'
               '</p><div class="wrap"><table><tr><th>Event</th><th>Lane</th><th>Page</th><th>Heats</th>'
               '<th>Signed</th><th>Unreadable SW</th><th>Medium/low SW</th><th>Overwritten SW</th></tr>']
     for (e, ln), s in sorted(audit.sheets.items()):
@@ -704,11 +750,11 @@ def build(audit, tol, urls=None):
         heats = " ".join(f'<a href="#{swim_id(e, h, ln)}">{h}</a>' for h, r in enumerate(s["rows"], 1)
                          if r["status"] != "NO_SWIMMER")
         sheets.append(f'<tr id="{sheet_id(e, ln)}"><td><a href="#e{e}">{e}</a></td><td>{ln}</td>'
-                      f'<td>{scan_link(urls, s)}</td><td class="links">{heats}</td><td>'
+                      f'<td>{page_link(scans, s, sheet_id(e, ln))}</td><td class="links">{heats}</td><td>'
                       + ('<span class="badge ok">signed</span>' if s["signed"] else '<span class="badge bad">NOT SIGNED</span>')
                       + f'</td><td>{sum(1 for t in hts if not t["normalized"]) or ""}</td>'
                       f'<td>{sum(1 for t in hts if t["normalized"] and t["confidence"] != "HIGH") or ""}</td>'
-                      f'<td>{sum(1 for t in hts if t["corrected"]) or ""}</td></tr>')
+                      f'<td>{sum(1 for t in hts if t["corrected"]) or ""}</td></tr>' + scan_row(scans, s, sheet_id(e, ln), 8))
     have = set(audit.sheets)
     lanes = sorted({ln for _, ln in have})
     gone = [(e, ln) for e in sorted(audit.events) for ln in lanes if (e, ln) not in have]
@@ -731,9 +777,12 @@ def main():
     codes = load_codes(args[args.index("--codes") + 1] if "--codes" in args else DQ_CODES)
     given = pathlib.Path(args[0]) / "dq-codes.json"
     assigned = json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
-    urls = dict(args[i + 1].split("=", 1) for i, a in enumerate(args) if a == "--scan-url")
+    ocr = pathlib.Path(args[0]).resolve()
+    dirs = [pathlib.Path(args[args.index("--scans") + 1])] if "--scans" in args else [ocr.parent, ocr]
+    opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default  # noqa: E731
+    scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
     audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned)
-    pathlib.Path(args[2]).write_text(build(audit, tol, urls), encoding="utf-8")
+    pathlib.Path(args[2]).write_text(build(audit, tol, scans), encoding="utf-8")
     print(f"Wrote {args[2]}")
 
 

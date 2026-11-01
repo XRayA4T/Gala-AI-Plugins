@@ -42,18 +42,23 @@ code differs from one written on the lane sheet.
 
 ## Run
 
-`$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`).
+`$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scan-url "SCAN.pdf=URL" ...]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40]
 ```
 
 Every section, and each event in the full result review, starts collapsed. A **Paper** column links each swim to
 its lane sheet and DQ slips; the DQ and lane sheet tables link back to the swims. Following a link opens the
-sections it lands in (Chromium browsers) and outlines the row. Slip and sheet page numbers open the scan at that
-page: `<scan>.pdf#page=N` next to the report, or `URL#page=N` for a scan given with `--scan-url`. Never put an
-access key or other secret in a `--scan-url`. Expand/collapse-all buttons appear only where scripts may run, not
-in a sandboxed viewer.
+sections it lands in (Chromium browsers) and outlines the row. Expand/collapse-all buttons appear only where
+scripts may run, not in a sandboxed viewer.
+
+The report is **self-contained**: every lane sheet and DQ slip row carries its scanned page, embedded as a grayscale
+JPEG under the row (collapsed), and the row's page number jumps to it. The pages come from the scan PDFs the OCR file
+names point to (`<scan>.pdf`), looked for in `--scans DIR`, else the OCR folder's parent, then the OCR folder; it
+needs poppler's `pdftoppm`. The defaults (90 dpi, JPEG quality 40) keep handwritten times legible at about 25 KB a
+page (about 7.5 MB for a 185-page gala); raise `--scan-dpi` if a scan is hard to read. A missing scan PDF is
+skipped with a warning, and its rows show the page number only.
 
 Write the report where the user asks; otherwise next to the OCR folder, named after the meet. The page has the
 swimmers' names (many of them children): keep it in the user's project, and don't publish or upload it anywhere
