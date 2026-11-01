@@ -95,8 +95,8 @@ button time into it);
 |---|---|---|---|
 | yes | within tolerance of PB and SW median | TP | |
 | yes | outside PB, within SW median | TP | bad PB time |
-| yes | within PB, outside SW median | TP | poor SW time (named when one timer stands out) |
-| yes | outside both | SW median | bad TP time |
+| yes | within PB, outside SW median | SW median | TP and PB both outside the watches (listed under SW overrides) |
+| yes | outside both | SW median | bad TP time (listed under SW overrides) |
 | no | | SW median, thousandths dropped | bad PB if PB is outside tolerance; poor SW time if adding PB moves the median by more than the tolerance |
 | no | no SW times | PB | |
 

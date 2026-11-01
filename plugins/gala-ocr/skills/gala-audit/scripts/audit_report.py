@@ -10,9 +10,9 @@ programme heat to its Gen7 race; without them, a heat is matched to the Gen7 rac
 
 For every event, heat and lane the report lists the touch pad (TP) time, the push button (PB) time, every lane sheet
 (SW) time, the final time and audit notes. The final time:
-- with a TP time: TP when it is within the tolerance of the SW median (a PB time outside it is noted as bad); TP when
-  it is within the tolerance of PB but not of the SW median (poor SW times noted); otherwise the SW median, with the
-  TP time noted as bad;
+- with a TP time: TP when it is within the tolerance of the SW median (a PB time outside it is noted as bad);
+  otherwise the SW median overrides it: the TP time is noted as bad, or, when TP agrees with PB, as TP and PB both
+  outside the SW median; TP alone when there are no SW times;
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
 A no-show on the lane sheet with no SW times is recorded as N/S with no time, even when Gen7 has one.
@@ -222,7 +222,7 @@ class Audit:
         # A no-show on the lane sheet with no SW times is recorded as N/S, whatever Gen7 has.
         res["ns"] = bool(row) and row["status"] == "NO_SHOW" and not row["handTimes"]
         before = len(res["notes"])
-        final = None
+        final, res["swOverride"] = None, False
         if tp is not None:
             if med is None:
                 final = tp
@@ -234,10 +234,11 @@ class Audit:
                 if pb is not None and abs(tp - pb) > tol:
                     note(f"Bad PB time: {fmt(pb)} is {fmt(pb - tp, True)}s from TP", "warn")
             elif pb is not None and abs(tp - pb) <= tol:
-                final = tp
-                poor_sw(tp, f"the SW median {fmt(med)} is {fmt(med - tp, True)}s from TP, which agrees with PB")
+                final, res["swOverride"] = int(med), True
+                note(f"TP and PB agree but are outside the SW median: TP {fmt(tp)} is {fmt(tp - med, True)}s and PB "
+                     f"{fmt(pb)} {fmt(pb - med, True)}s from it; SW median used", "warn")
             else:
-                final = int(med)
+                final, res["swOverride"] = int(med), True
                 note(f"Bad TP time: {fmt(tp)} is {fmt(tp - med, True)}s from the SW median"
                      + (f" and {fmt(tp - pb, True)}s from PB" if pb is not None else "")
                      + "; SW median used", "serious")
@@ -560,7 +561,9 @@ def build(audit, tol, urls=None):
     summary = [
         ("Swims with a final time", len(swims)),
         ("Final time from the touch pad", count(lambda r: r["final"] is not None and r["final"] == r["tp"])),
-        ("Final time from the SW median (no TP, or bad TP)", count(lambda r: has(r, "SW median used"))),
+        ("Final time from the SW median (no TP, or TP outside the SW median)", count(lambda r: has(r, "SW median used"))),
+        ("SW median overrides the TP time (see SW overrides)", count(lambda r: r["swOverride"])),
+        ("TP and PB agree but are outside the SW median", count(lambda r: has(r, "TP and PB agree"))),
         ("Bad TP time (outside the tolerance of both PB and the SW median)", count(lambda r: has(r, "Bad TP time"))),
         ("Bad PB time", count(lambda r: has(r, "Bad PB time"))),
         ("Poor SW time", count(lambda r: has(r, "Poor SW time"))),
@@ -593,7 +596,7 @@ def build(audit, tol, urls=None):
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<div class="bar"><button data-all="open" hidden>Expand all</button><button data-all="close" hidden>Collapse all</button>'
-           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#serious">Serious issues</a>'
+           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
            '<a href="#dq">DQs</a><a href="#results">Full result review</a><a href="#sheets">Lane sheets</a></div>',
            '<p class="muted">Sections start collapsed. In the results, <b>Paper</b> links each swim to its lane sheet '
            'and DQ slips; event, heat and lane links lead back to the swim, and page numbers open the scan.</p>',
@@ -601,9 +604,9 @@ def build(audit, tol, urls=None):
            '<li><b>TP</b> is the touch pad finish (the Gen7 split on the race\'s last row, unless it is the same as an '
            'underlined button override, which Gen7 copies into it), <b>PB</b> the push button '
            'backup time, <b>SW</b> the lane sheet (stopwatch) times; the SW median of two is their mean.</li>'
-           '<li>With a TP time: TP when it is within the tolerance of the SW median (a PB outside it is a bad PB); TP '
-           'when it agrees with PB but not the SW median (poor SW times); otherwise the SW median, and the TP time is '
-           'bad.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
+           '<li>With a TP time: TP when it is within the tolerance of the SW median (a PB outside it is a bad PB); '
+           'otherwise the SW median overrides it, even when TP agrees with PB (both are noted as outside the SW '
+           'median; a TP that agrees with neither is a bad TP). TP alone when there are no SW times.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
            'bad PB; if adding PB moves the median by more than the tolerance, an SW time is poor and is named when '
            'it can be picked out. PB alone when there are no SW times.</li>'
            '<li>A no-show on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has '
@@ -646,6 +649,13 @@ def build(audit, tol, urls=None):
         nos = '<p class="muted">None.</p>'
     dq.append(f'<details class="sheet" id="dq-noslip"><summary><h3>DQ marked on a lane sheet with no slip</h3> '
               f'<span class="badge {"bad" if missing else "ok"}">{len(missing)}</span></summary>{nos}</details>')
+    overrides = [r for r in allres if r["swOverride"]]
+    out.append(section("overrides", "SW overrides",
+                       f'<p class="muted">Swims with a TP time outside the tolerance of the SW median, where the SW '
+                       f'median is the final time. Select an event number to go to the swim.</p>'
+                       f'<div class="wrap"><table>{HEAD.format(lead="<th>Event</th>")}'
+                       + "".join(result_row(audit, r, True) for r in overrides) + "</table></div>",
+                       f' <span class="badge minor">{len(overrides)} swims</span>'))
     out.append(section("dq", "DQs", "".join(dq), f' <span class="badge minor">{len(slip_rows)} slips</span>'))
 
     review = [f'<p class="muted">Every swim by event, heat and lane. Shaded SW times were read with medium (yellow) or '
