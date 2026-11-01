@@ -71,7 +71,8 @@ python3 -I $SKILL/scripts/merge_results.py <ocr folder> "<gen7 report>.pdf" <ent
 
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
-the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt,
+the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt:
+three in backups 1-3, two in backups 2 and 3, one in backup 3, with PB in backup 1 when there is one;
 otherwise the Gen7 buttons, as Meet Manager writes them for a pad time; when TP is the final time and there is
 no PB time, the SW median, thousandths dropped, as backup 1; when TP agrees with the SW median but not PB, PB as
 backup 1 and the SW median as backup 2), places in the heat and

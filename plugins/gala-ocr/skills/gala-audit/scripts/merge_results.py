@@ -11,7 +11,8 @@ exported for the same meet: its header (A1, B1, B2) is copied, with today's date
 show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
 32, where MM writes 1 for seeded and S for scored), then:
 - E2: the final time; the pad (TP) time; up to three backup times: the lane sheet (SW) times when the final time comes
-  from them or TP was kept in doubt, otherwise the Gen7 buttons (as Meet Manager writes them for a pad time), or,
+  from them or TP was kept in doubt (two SW times in backups 2 and 3, one in backup 3, with PB in backup 1 when there
+  is one), otherwise the Gen7 buttons (as Meet Manager writes them for a pad time), or,
   with no PB time, the SW median (thousandths dropped) as backup 1, or, when TP agrees with the SW median but not
   PB, PB as backup 1 and the SW median as backup 2; the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
   time is not the pad time. A DQ (a slip in OCR_DIR, coded in dq-codes.json) is "Q" with the code in Hy-Tek's form
@@ -203,7 +204,12 @@ def main():
         # buttons, as Meet Manager writes them for a pad time.
         from_tp = res["tp"] is not None and res["final"] == res["tp"] and not res["swOverride"]
         use_sw = res["sw"] and (not from_tp or res["swDoubt"])
-        backups = [v for _, v, _ in res["sw"]][:3] if use_sw else button_times(res)
+        backups = button_times(res)
+        if use_sw:
+            # The SW times fill the last backups (two SW times in backups 2 and 3, one in backup 3), so it is plain
+            # which backups are watches; PB, when there is one, goes in backup 1.
+            sw = [v for _, v, _ in res["sw"]][:3]
+            backups = [int(res["pb"] or 0)] * (len(sw) < 3) + [0] * (len(sw) == 1) + sw
         # TP with no PB time to back it: the SW median goes in as backup 1.
         if res["swBackup"]:
             backups = [int(res["median"])]
