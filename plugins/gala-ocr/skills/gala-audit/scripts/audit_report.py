@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.35]
+Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.35] [--codes DQ_CODES.txt]
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
 (<scan>-eventEE-heatH-laneL-pPPP.json) and ETD programme pages (<scan>-pPPP.json). The ETD race numbers link each
@@ -15,9 +15,14 @@ For every event, heat and lane the report lists the touch pad (TP) time, the pus
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
+DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
+Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
+"code","description","group" with group Misc, free, back, breast, fly, IM or Relay): the code must exist and its
+group must be one that can happen in the event. Codes written in a lane sheet's notes are checked the same way.
 It also checks DQ slips against the lane sheets and Gen7, lane sheet DQ marks against the slips, and repeats the
 lane sheet findings (unsigned sheets, unreadable or corrected times). Needs the gen7-report skill next to this one.
 """
+import csv
 import html
 import json
 import pathlib
@@ -33,6 +38,8 @@ import gen7_report  # noqa: E402
 LANE_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
 SLIP_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-heat(?P<heat>\d+)-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
 ETD_NAME = re.compile(r"^(?P<scan>.+)-p(?P<page>\d{3,})\.json$")
+DQ_CODES = pathlib.Path(__file__).resolve().parents[1] / "data" / "dqcodesFINA.txt"
+STROKES = {"butterfly": "fly", "backstroke": "back", "breaststroke": "breast", "freestyle": "free"}
 TIME = re.compile(r"^(?:(\d{1,2}):)?(\d{1,2})\.(\d{2})$")
 
 
@@ -67,7 +74,10 @@ def load(ocr_dir):
     sheets, slips, etd = {}, [], {}
     for f in sorted(pathlib.Path(ocr_dir).glob("*.json")):
         data = json.loads(f.read_text(encoding="utf-8"))
+        if f.name == "dq-codes.json":
+            continue
         if m := SLIP_NAME.match(f.name):
+            data["_file"] = f.name
             slips.append(data)
         elif m := LANE_NAME.match(f.name):
             data["_scan"], data["_page"] = m["scan"] + ".pdf", int(m["page"])
@@ -78,14 +88,52 @@ def load(ocr_dir):
     return sheets, slips, etd
 
 
+def load_codes(path):
+    """{code: (description, group)} from a list of "code","description","group" lines."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return {r[0].strip(): (r[1].strip(), r[2].strip()) for r in csv.reader(f) if len(r) >= 3 and r[0].strip()}
+
+
+def code_groups(description):
+    """The code groups that can apply in an event: Misc, plus its stroke (all four in a medley), plus IM or Relay."""
+    d = description.lower()
+    groups = {"Misc"}
+    if re.search(r"\bim\b|medley", d):
+        groups |= set(STROKES.values()) | {"Relay" if "relay" in d else "IM"}
+    else:
+        groups |= {v for k, v in STROKES.items() if k in d} or {"free"}
+        if "relay" in d:
+            groups.add("Relay")
+    return groups
+
+
+def code_problems(code, desc, codes, infraction=""):
+    """Findings for a DQ code given in an event."""
+    if code not in codes:
+        return [("serious", f"DQ code {code} is not in the code list")]
+    text, group = codes[code]
+    if group not in code_groups(desc):
+        return [("serious", f"DQ code {code} ({group}: {text}) cannot apply in {desc}")]
+    out = []
+    if code == "IMC":
+        out.append(("warn", "IMC says to use the stroke's own code"))
+    leg = re.search(r"\b(butterfly|backstroke|breast\w*|freestyle)\s+leg\b", infraction.lower())
+    if leg and group in STROKES.values():
+        stroke = "breast" if leg.group(1).startswith("breast") else STROKES[leg.group(1)]
+        if stroke != group:
+            out.append(("warn", f"The infraction is on the {leg.group(1)} leg but code {code} is a {group} code"))
+    return out
+
+
 def distance(description):
     m = re.search(r"(\d+)\s*(?:LC|SC)?\s*Meter", description)
     return int(m.group(1)) if m else None
 
 
 class Audit:
-    def __init__(self, sheets, slips, etd, races, tol):
+    def __init__(self, sheets, slips, etd, races, tol, codes=None, assigned=None):
         self.sheets, self.slips, self.etd, self.tol = sheets, slips, etd, tol
+        self.codes, self.assigned = codes or {}, assigned or {}
         self.races = {r["race"]: r for r in races}
         self.by_heat = defaultdict(list)
         for r in races:
@@ -224,6 +272,10 @@ class Audit:
         res["diff"] = None if official is None or final is None else official - final
         if row and row["notes"]:
             note(f"Lane sheet: {row['notes']}")
+            if row["status"] == "DISQUALIFIED" or re.search(r"\bDQ\b", row["notes"]):
+                for c in self.written_codes(row):
+                    for lv, t in code_problems(c, self.events.get(event, ""), self.codes):
+                        note(f"Lane sheet: {t}", lv)
         dq = self.slip_keys.get((event, heat, lane))
         res["dq"] = dq
         return res
@@ -289,6 +341,15 @@ class Audit:
                 f.append(("minor", "No announcement time or initial"))
             if not s["officialSigned"] or not s["refereeSigned"]:
                 f.append(("serious", "Not signed by the official and the referee"))
+            code = self.assigned.get(s["_file"], {}).get("code", "")
+            if not code:
+                f.append(("warn", "No DQ code given"))
+            elif self.codes:
+                f += code_problems(code, desc, self.codes, s["infraction"] + " " + s["back"])
+            if code and row:
+                written = self.written_codes(row)
+                if written and code not in written:
+                    f.append(("warn", f"The lane sheet has {', '.join(written)}; the slip's code is {code}"))
             rows.append((s, row, f))
         # A DQ marked on a lane sheet needs a slip.
         missing = []
@@ -298,6 +359,10 @@ class Audit:
                 if marked and (e, i, ln) not in self.slip_keys:
                     missing.append((e, i, ln, row))
         return rows, missing
+
+    def written_codes(self, row):
+        """DQ codes from the code list written in a lane sheet row's notes."""
+        return [c for c in self.codes if re.search(rf"(?<![A-Za-z]){re.escape(c)}(?![A-Za-z0-9])", row["notes"])]
 
 
 CSS = """:root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d9d9de; --head:#f4f4f6;
@@ -392,6 +457,16 @@ HEAD = ("<tr>{lead}<th>Heat</th><th>Lane</th><th>Swimmer</th><th>Team</th><th>Ra
         "<th>Official − final</th><th>Audit notes</th></tr>")
 
 
+def code_cell(audit, slip):
+    given = audit.assigned.get(slip["_file"], {})
+    code = given.get("code", "")
+    if not code:
+        return ""
+    text = audit.codes.get(code, ("not in the code list", ""))[0]
+    note = f'<br><span class="muted">{esc(given["note"])}</span>' if given.get("note") else ""
+    return f'<b>{esc(code)}</b> <span class="muted">{esc(text)}</span>{note}'
+
+
 def build(audit, tol):
     results = audit.results()
     slip_rows, missing = audit.dq_findings(results)
@@ -400,6 +475,7 @@ def build(audit, tol):
     meet = next(iter(audit.sheets.values()))
     count = lambda pred: sum(1 for r in allres if pred(r))  # noqa: E731
     has = lambda r, s: any(s in n for _, n in r["notes"])  # noqa: E731
+    coded = sum(1 for s in audit.slips if audit.assigned.get(s["_file"], {}).get("code"))
     summary = [
         ("Swims with a final time", len(swims)),
         ("Final time from the touch pad", count(lambda r: r["final"] is not None and r["final"] == r["tp"])),
@@ -418,6 +494,7 @@ def build(audit, tol):
         ("SW time could not be read", count(lambda r: has(r, "could not be read"))),
         ("DQ slips", len(slip_rows)),
         ("DQ slips with a serious finding", sum(1 for _, _, f in slip_rows if any(lv == "serious" for lv, _ in f))),
+        ("DQ slips with no DQ code", len(audit.slips) - coded),
         ("DQ marked on a lane sheet with no slip", len(missing)),
         ("Lane sheets not signed", sum(1 for s in audit.sheets.values() if not s["signed"])),
     ]
@@ -429,7 +506,7 @@ def build(audit, tol):
            f'<p class="muted">{esc(meet["meetDate"])}. Generated {datetime.now():%Y-%m-%d %H:%M}. Tolerance '
            f'{tol / 100:.2f}s. Sources: lane sheets ({len(audit.sheets)} transcribed), DQ slips ({len(audit.slips)}), '
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
-           f'No Meet Manager results were given, so DQ codes are not checked.</p>',
+           f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<h2>How the final time is chosen</h2><ul>'
            '<li><b>TP</b> is the touch pad finish (the Gen7 split on the race\'s last row), <b>PB</b> the push button '
            'backup time, <b>SW</b> the lane sheet (stopwatch) times; the SW median of two is their mean.</li>'
@@ -448,14 +525,15 @@ def build(audit, tol):
 
     out.append(f'<h2 id="dq">DQs</h2><p class="muted">{len(slip_rows)} slips. A slip is checked against the lane '
                f'sheet (is there a swimmer, and did they swim?), Gen7 (a finish in that lane) and the event (an '
-               f'infraction that cannot happen in it).</p><div class="wrap"><table><tr><th>Event</th><th>Heat</th>'
-               f'<th>Lane</th><th>Slip</th><th>Swimmer (lane sheet)</th><th>Team</th><th>Infraction</th>'
+               f'infraction or DQ code that cannot happen in it).</p><div class="wrap"><table><tr><th>Event</th><th>Heat</th>'
+               f'<th>Lane</th><th>Slip</th><th>Swimmer (lane sheet)</th><th>Team</th><th>Infraction</th><th>Code</th>'
                f'<th>Official</th><th>Referee</th><th>Announced</th><th>Findings</th></tr>')
     for s, row, f in slip_rows:
         who = esc(row["swimmerName"]) if row and row["swimmerName"] else '<span class="muted">none</span>'
         out.append(f'<tr><td><a href="#e{s["eventNumber"]}">{s["eventNumber"]}</a></td><td>{s["heat"]}</td>'
                    f'<td>{s["lane"]}</td><td>p{s["page"]}</td><td>{who}</td><td>{esc(row["team"]) if row else ""}</td>'
                    f'<td>{esc(s["infraction"])}{"<br><span class=muted>Back: " + esc(s["back"]) + "</span>" if s["back"] else ""}</td>'
+                   f'<td>{code_cell(audit, s)}</td>'
                    f'<td>{esc(s["official"])}</td><td>{esc(s["referee"])}</td><td class="t">{esc(s["announcementTime"])}</td>'
                    f'<td>{findings(f)}</td></tr>')
     out.append("</table></div>")
@@ -505,7 +583,10 @@ def main():
         sys.exit(__doc__)
     tol = round(float(args[args.index("--tolerance") + 1]) * 100) if "--tolerance" in args else 35
     sheets, slips, etd = load(args[0])
-    audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol)
+    codes = load_codes(args[args.index("--codes") + 1] if "--codes" in args else DQ_CODES)
+    given = pathlib.Path(args[0]) / "dq-codes.json"
+    assigned = json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
+    audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned)
     pathlib.Path(args[2]).write_text(build(audit, tol), encoding="utf-8")
     print(f"Wrote {args[2]}")
 

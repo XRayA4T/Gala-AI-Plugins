@@ -14,12 +14,36 @@ and writes one self-contained HTML page. If the scans are not transcribed yet, d
 pages link each programme heat to its Gen7 race, including events swum together as one race. Without them, heats
 are matched by event and heat number, which is wrong for combined events and re-started heats.
 
+## DQ codes
+
+`$SKILL/data/dqcodesFINA.txt` is the FINA DQ code list: one `"code","description","group"` line per code, with
+group `Misc`, `free`, `back`, `breast`, `fly`, `IM` or `Relay` (e.g. `"BrK","Stroke cycle not 1 arm stroke to 1 leg
+kick in that order","breast"`). Use the meet's own list instead if the user gives one (`--codes FILE`, same format).
+
+Slips carry the official's wording, not a code, so before running give each slip its code: read the infraction (and
+the back) against the list and write `<ocr folder>/dq-codes.json`:
+
+```json
+{"DQs-event07-heat2-lane8-p008.json": {"code": "BrK", "note": ""},
+ "DQs-event12-heat4-lane1-p025.json": {"code": "BrD", "note": "No code for a butterfly kick during the stroke; BrD is closest"}}
+```
+
+- Pick from the codes of the event's stroke, plus `Misc`; in an IM, the code of the stroke whose leg it was (not
+  `IMC`, which says to use the stroke codes), or `IMA` / `IMB`; `Relay` codes only in relays.
+- When no code fits exactly, give the closest and say why in `note`; when two apply, give the main one and name the
+  other in `note`. Use `""` for `code` when you can't tell, rather than guess.
+- List the codes with a `note` in your report back, for the referee to confirm.
+
+The report shows each slip's code and description, and flags a code that is not in the list, one whose group cannot
+happen in the event (a backstroke code in a butterfly race), an IM code on the wrong leg's stroke, and a slip whose
+code differs from one written on the lane sheet.
+
 ## Run
 
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.35]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.35] [--codes DQ_CODES.txt]
 ```
 
 Write the report where the user asks; otherwise next to the OCR folder, named after the meet. The page has the
@@ -47,12 +71,12 @@ confidence, overwritten times).
 **DQs:** each slip is checked against the lane sheet (a swimmer in that heat and lane, and not a no-show), Gen7 (a
 finish in that lane) and the event (an IM infraction in a non-IM event, a distance longer than the race), and for
 duplicates, missing signatures, announcement time and initial. A DQ marked on a lane sheet with no slip is listed
-as a missing slip. Without Meet Manager results the DQ codes cannot be checked; the report says so.
+as a missing slip. Each slip's DQ code (from `dq-codes.json`) is checked against the event, as above.
 
 ## Report back
 
 Give the user the file path and the headline numbers from the report's summary: swims, how many finals came from
 TP and from the SW median, bad TP and bad PB times, official times that differ from the final time beyond the
 tolerance (and the largest), swims with lane sheet times but no Gen7 time (by lane, if one lane stands out), DQ
-slips with serious findings, and missing lane sheets. Don't paste swimmers' names into chat; refer to swims by
+slips with serious findings, codes you assigned with a note, and missing lane sheets. Don't paste swimmers' names into chat; refer to swims by
 event, heat and lane.
