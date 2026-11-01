@@ -64,7 +64,7 @@ Every entry gets its team, swimmer and entry lines copied from the entries file 
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, the lane sheet times as backup times (the Gen7 buttons when there are none), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
-form (stroke number and letter: BaG is `2G`, IMB `5B`), no-shows, and the Gen7 splits. The A1 header line is the
+form (stroke number and letter: BaG is `2G`, IMB `5B`; Meet Manager stores and exports the code this way and shows it as BaG), no-shows, and the Gen7 splits. The A1 header line is the
 template's with today's date. Name the output like Meet Manager's (`Merge Meet Results-<meet>-<date>-audit.hy3`).
 
 Report what the script prints (swims it moved to the lane sheet's swimmer, swims with no time, lane sheet swimmers

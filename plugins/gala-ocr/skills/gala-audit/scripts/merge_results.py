@@ -187,9 +187,10 @@ def main():
     for s in sorted(swims, key=lambda s: s["event"]):
         # E1 column 32 is the event's status in Meet Manager: 1 seeded, S scored, A done. Every event is done.
         lines += [out_line(s["c1"]), out_line(s["d1"]), out_line(put(s["e1"], 31, "A"))]
+        # In a done event Meet Manager writes the course on every result, and a 0 in column 100.
         if not s["heat"]:
             e2 = unseeded or put(put(base, 3, tm(0)), 11, " ")
-            lines.append(out_line(put(e2, 87, meet_date)))
+            lines.append(out_line(put(put(put(e2, 87, meet_date), 11, "L"), 99, "0")))
             continue
         res = s["res"]
         e2 = put(base, 3, tm(s["time"]))
@@ -199,8 +200,11 @@ def main():
         backups = [v for _, v, _ in res["sw"]][:3] if res["sw"] else button_times(res)
         for k in range(3):
             e2 = put(e2, 36 + 8 * k, tm(backups[k] if k < len(backups) else 0))
-        e2 = put(e2, 63, tm(res["tp"] or 0, 10))
+        # A pad time less than half the final time is a stray touch, which Meet Manager drops.
+        tp = res["tp"] if res["tp"] and s["time"] and res["tp"] * 2 >= s["time"] else 0
+        e2 = put(e2, 63, tm(tp, 10))
         e2 = put(e2, 87, meet_date)
+        e2 = put(e2, 99, "0")
         e2 = put(e2, 95, "A" if s["time"] and s["time"] != res["tp"] and s["status"] != "R" else " ")
         if s["status"] == "R":
             for k in range(3):
