@@ -45,8 +45,15 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.35] [--codes DQ_CODES.txt]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.35] [--codes DQ_CODES.txt] [--scan-url "SCAN.pdf=URL" ...]
 ```
+
+Every section, and each event in the full result review, starts collapsed. A **Paper** column links each swim to
+its lane sheet and DQ slips; the DQ and lane sheet tables link back to the swims. Following a link opens the
+sections it lands in (Chromium browsers) and outlines the row. Slip and sheet page numbers open the scan at that
+page: `<scan>.pdf#page=N` next to the report, or `URL#page=N` for a scan given with `--scan-url`. Never put an
+access key or other secret in a `--scan-url`. Expand/collapse-all buttons appear only where scripts may run, not
+in a sandboxed viewer.
 
 Write the report where the user asks; otherwise next to the OCR folder, named after the meet. The page has the
 swimmers' names (many of them children): keep it in the user's project, and don't publish or upload it anywhere

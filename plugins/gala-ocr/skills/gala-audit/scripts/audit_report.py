@@ -2,6 +2,7 @@
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
 Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.35] [--codes DQ_CODES.txt]
+                       [--scan-url "SCAN.pdf=URL" ...]
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
 (<scan>-eventEE-heatH-laneL-pPPP.json) and ETD programme pages (<scan>-pPPP.json). The ETD race numbers link each
@@ -22,12 +23,15 @@ Codes are checked against the DQ code list (default: the FINA list in ../data/dq
 group must be one that can happen in the event. Codes written in a lane sheet's notes are checked the same way.
 It also checks DQ slips against the lane sheets and Gen7, lane sheet DQ marks against the slips, and repeats the
 lane sheet findings (unsigned sheets, unreadable or corrected times). Needs the gen7-report skill next to this one.
+Every section starts collapsed. Each swim links to its lane sheet and DQ slips in the report, and each sheet and slip
+to its page of the scan: <scan>.pdf#page=N next to the report, or the URL given with --scan-url for that scan.
 """
 import csv
 import html
 import json
 import pathlib
 import re
+import urllib.parse
 import statistics
 import sys
 from collections import defaultdict
@@ -79,6 +83,7 @@ def load(ocr_dir):
             continue
         if m := SLIP_NAME.match(f.name):
             data["_file"] = f.name
+            data["_scan"], data["_page"] = m["scan"] + ".pdf", int(m["page"])
             slips.append(data)
         elif m := LANE_NAME.match(f.name):
             data["_scan"], data["_page"] = m["scan"] + ".pdf", int(m["page"])
@@ -407,10 +412,60 @@ li.serious { color:var(--bad-fg); font-weight:600; } li.warn { color:var(--warn-
 b.final { font-weight:700; }
 a { color:inherit; }
 .wrap { overflow-x:auto; }
-details.sheet { margin:24px 0 0; } details.sheet > summary { cursor:pointer; }
-details.sheet > summary h2, details.sheet > summary h3 { display:inline; margin:0; }
-@media print { body { max-width:none; } h2 { break-after:avoid; } tr { break-inside:avoid; } }
+details.sec { margin:20px 0 0; } details.sheet { margin:12px 0 0 16px; }
+details > summary { cursor:pointer; }
+details > summary h2, details > summary h3 { display:inline; margin:0; }
+.bar { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin:12px 0; }
+.bar button { font:inherit; padding:3px 10px; border:1px solid var(--line); border-radius:4px; background:var(--head);
+              color:var(--fg); cursor:pointer; }
+.links a { white-space:nowrap; margin-right:6px; }
+tr:target, tr.hit { outline:2px solid var(--warn-fg); outline-offset:-2px; }
+@media print { body { max-width:none; } h2 { break-after:avoid; } tr { break-inside:avoid; } .bar { display:none; } }
 """
+
+# Sections start collapsed. Browsers open the sections around a link's target; where scripts may run (not in a
+# sandboxed viewer), this also offers expand/collapse all and marks the row a link went to.
+JS = """
+document.querySelectorAll('button[data-all]').forEach(b => b.hidden = false);
+function openTo(id) {
+  const el = id && document.getElementById(decodeURIComponent(id));
+  if (!el) return;
+  for (let d = el.closest('details'); d; d = d.parentElement.closest('details')) d.open = true;
+  document.querySelectorAll('.hit').forEach(x => x.classList.remove('hit'));
+  if (el.tagName === 'TR') el.classList.add('hit');
+  el.scrollIntoView({block: 'center'});
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href^="#"]');
+  if (a) { e.preventDefault(); history.pushState(null, '', a.hash); openTo(a.hash.slice(1)); }
+  const b = e.target.closest('button[data-all]');
+  if (b) document.querySelectorAll('details').forEach(d => d.open = b.dataset.all === 'open');
+});
+window.addEventListener('popstate', () => openTo(location.hash.slice(1)));
+openTo(location.hash.slice(1));
+"""
+
+
+def section(sid, title, body, extra=""):
+    return f'<details class="sec" id="{sid}"><summary><h2>{title}</h2>{extra}</summary>{body}</details>'
+
+
+def swim_id(e, h, ln):
+    return f"r{e}-{h}-{ln}"
+
+
+def sheet_id(e, ln):
+    return f"ls{e}-{ln}"
+
+
+def slip_id(slip):
+    return "dq-" + re.sub(r"[^A-Za-z0-9]+", "-", slip["_file"].removesuffix(".json")).strip("-")
+
+
+def scan_link(urls, doc, label=None):
+    url = urls.get(doc["_scan"]) or urllib.parse.quote(doc["_scan"])
+    return (f'<a href="{esc(url)}#page={doc["_page"]}" '
+            f'title="{esc(doc["_scan"])} page {doc["_page"]}">{label or "p" + str(doc["_page"])}</a>')
 
 
 def findings(notes, levels=("serious", "warn", "minor")):
@@ -449,14 +504,26 @@ def swimmer(res):
     return s
 
 
-def result_row(res, with_event=False):
+def paper_links(audit, res):
+    e, h, ln = res["event"], res["heat"], res["lane"]
+    links = []
+    if (e, ln) in audit.sheets:
+        links.append(f'<a href="#{sheet_id(e, ln)}">sheet</a>')
+    for s in sorted(audit.slip_keys.get((e, h, ln), []), key=lambda s: s["_page"]):
+        links.append(f'<a href="#{slip_id(s)}">DQ p{s["_page"]}</a>')
+    return f'<td class="links">{"".join(links)}</td>'
+
+
+def result_row(audit, res, with_event=False):
     row = res["row"] or {}
     final_cls = " bad" if res["serious"] else ""
     diff = res["diff"]
     diff_cls = " bad" if diff is not None and abs(diff) > 35 else (" medium" if diff else "")
-    lead = f'<td><a href="#e{res["event"]}">{res["event"]}</a></td>' if with_event else ""
+    key = swim_id(res["event"], res["heat"], res["lane"])
+    lead = f'<td><a href="#{key}">{res["event"]}</a></td>' if with_event else ""
+    rid = "" if with_event else f' id="{key}"'
     race = res["race"]["race"] if res["race"] else ""
-    return (f'<tr>{lead}<td>{res["heat"]}</td><td>{res["lane"]}</td><td>{swimmer(res)}</td>'
+    return (f'<tr{rid}>{lead}<td>{res["heat"]}</td><td>{res["lane"]}</td><td>{swimmer(res)}</td>{paper_links(audit, res)}'
             f'<td>{esc(row.get("team", ""))}</td><td class="t">{race}</td>'
             f'<td class="t">{fmt(res["tp"])}</td><td class="t">{fmt(res["pb"])}</td>{sw_cells(res)}'
             f'<td class="t">{fmt(res["median"])}</td><td class="t{final_cls}"><b class="final">{"N/S" if res["ns"] and res["official"] is not None else fmt(res["final"])}</b></td>'
@@ -465,7 +532,7 @@ def result_row(res, with_event=False):
             f'<td>{findings(res["notes"])}</td></tr>')
 
 
-HEAD = ("<tr>{lead}<th>Heat</th><th>Lane</th><th>Swimmer</th><th>Team</th><th>Race</th><th>TP</th><th>PB</th>"
+HEAD = ("<tr>{lead}<th>Heat</th><th>Lane</th><th>Swimmer</th><th>Paper</th><th>Team</th><th>Race</th><th>TP</th><th>PB</th>"
         "<th>SW 1</th><th>SW 2</th><th>SW 3</th><th>SW median</th><th>Final</th><th>Gen7 official</th>"
         "<th>Official − final</th><th>Audit notes</th></tr>")
 
@@ -480,7 +547,8 @@ def code_cell(audit, slip):
     return f'<b>{esc(code)}</b> <span class="muted">{esc(text)}</span>{note}'
 
 
-def build(audit, tol):
+def build(audit, tol, urls=None):
+    urls = urls or {}
     results = audit.results()
     slip_rows, missing = audit.dq_findings(results)
     allres = [r for rs in results.values() for r in rs]
@@ -524,7 +592,12 @@ def build(audit, tol):
            f'{tol / 100:.2f}s. Sources: lane sheets ({len(audit.sheets)} transcribed), DQ slips ({len(audit.slips)}), '
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
-           '<h2>How the final time is chosen</h2><ul>'
+           '<div class="bar"><button data-all="open" hidden>Expand all</button><button data-all="close" hidden>Collapse all</button>'
+           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#serious">Serious issues</a>'
+           '<a href="#dq">DQs</a><a href="#results">Full result review</a><a href="#sheets">Lane sheets</a></div>',
+           '<p class="muted">Sections start collapsed. In the results, <b>Paper</b> links each swim to its lane sheet '
+           'and DQ slips; event, heat and lane links lead back to the swim, and page numbers open the scan.</p>',
+           section("rules", "How the final time is chosen", '<ul>'
            '<li><b>TP</b> is the touch pad finish (the Gen7 split on the race\'s last row, unless it is the same as an '
            'underlined button override, which Gen7 copies into it), <b>PB</b> the push button '
            'backup time, <b>SW</b> the lane sheet (stopwatch) times; the SW median of two is their mean.</li>'
@@ -536,64 +609,81 @@ def build(audit, tol):
            '<li>A no-show on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has '
            'one.</li>'
            '<li>The final time is compared with the Gen7 official time (<sup>PB</sup>: Gen7 used a push button '
-           'time).</li></ul>',
-           '<h2>Summary</h2><table><tr><th>Check</th><th>Count</th></tr>'
-           + "".join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k, v in summary) + "</table>",
-           f'<h2>Serious issues</h2><p class="muted">{len(serious)} swims. Select an event number for its results.</p>'
-           f'<div class="wrap"><table>{HEAD.format(lead="<th>Event</th>")}'
-           + "".join(result_row(r, True) for r in serious) + "</table></div>"]
+           'time).</li></ul>'),
+           section("summary", "Summary", '<table><tr><th>Check</th><th>Count</th></tr>'
+                   + "".join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k, v in summary) + "</table>"),
+           section("serious", "Serious issues",
+                   f'<p class="muted">Select an event number to go to the swim in the full result review.</p>'
+                   f'<div class="wrap"><table>{HEAD.format(lead="<th>Event</th>")}'
+                   + "".join(result_row(audit, r, True) for r in serious) + "</table></div>",
+                   f' <span class="badge {"bad" if serious else "ok"}">{len(serious)} swims</span>')]
 
-    out.append(f'<h2 id="dq">DQs</h2><p class="muted">{len(slip_rows)} slips. A slip is checked against the lane '
-               f'sheet (is there a swimmer, and did they swim?), Gen7 (a finish in that lane) and the event (an '
-               f'infraction or DQ code that cannot happen in it).</p><div class="wrap"><table><tr><th>Event</th><th>Heat</th>'
-               f'<th>Lane</th><th>Slip</th><th>Swimmer (lane sheet)</th><th>Team</th><th>Infraction</th><th>Code</th>'
-               f'<th>Official</th><th>Referee</th><th>Announced</th><th>Findings</th></tr>')
+    dq = [f'<p class="muted">A slip is checked against the lane sheet (is there a swimmer, and did they swim?), Gen7 '
+          f'(a finish in that lane) and the event (an infraction or DQ code that cannot happen in it). Event, heat '
+          f'and lane go to the swim; the slip page opens the scan.</p><div class="wrap"><table><tr><th>Event</th>'
+          f'<th>Heat</th><th>Lane</th><th>Slip</th><th>Swimmer (lane sheet)</th><th>Team</th><th>Infraction</th>'
+          f'<th>Code</th><th>Official</th><th>Referee</th><th>Announced</th><th>Findings</th></tr>']
     for s, row, f in slip_rows:
+        e, h, ln = s["eventNumber"], s["heat"], s["lane"]
+        swim = f'href="#{swim_id(e, h, ln)}"'
         who = esc(row["swimmerName"]) if row and row["swimmerName"] else '<span class="muted">none</span>'
-        out.append(f'<tr><td><a href="#e{s["eventNumber"]}">{s["eventNumber"]}</a></td><td>{s["heat"]}</td>'
-                   f'<td>{s["lane"]}</td><td>p{s["page"]}</td><td>{who}</td><td>{esc(row["team"]) if row else ""}</td>'
-                   f'<td>{esc(s["infraction"])}{"<br><span class=muted>Back: " + esc(s["back"]) + "</span>" if s["back"] else ""}</td>'
-                   f'<td>{code_cell(audit, s)}</td>'
-                   f'<td>{esc(s["official"])}</td><td>{esc(s["referee"])}</td><td class="t">{esc(s["announcementTime"])}</td>'
-                   f'<td>{findings(f)}</td></tr>')
-    out.append("</table></div>")
-    out.append(f'<h3>DQ marked on a lane sheet with no slip</h3>')
+        sheet = f' <a href="#{sheet_id(e, ln)}" class="muted">sheet</a>' if (e, ln) in audit.sheets else ""
+        dq.append(f'<tr id="{slip_id(s)}"><td><a {swim}>{e}</a></td><td><a {swim}>{h}</a></td><td><a {swim}>{ln}</a>'
+                  f'</td><td>{scan_link(urls, s)}</td><td>{who}{sheet}</td><td>{esc(row["team"]) if row else ""}</td>'
+                  f'<td>{esc(s["infraction"])}{"<br><span class=muted>Back: " + esc(s["back"]) + "</span>" if s["back"] else ""}</td>'
+                  f'<td>{code_cell(audit, s)}</td>'
+                  f'<td>{esc(s["official"])}</td><td>{esc(s["referee"])}</td><td class="t">{esc(s["announcementTime"])}</td>'
+                  f'<td>{findings(f)}</td></tr>')
+    dq.append("</table></div>")
     if missing:
-        out.append('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>Swimmer</th>'
-                   '<th>Lane sheet</th></tr>' + "".join(
-                       f'<tr><td><a href="#e{e}">{e}</a></td><td>{h}</td><td>{ln}</td><td>{esc(r["swimmerName"])}</td>'
-                       f'<td>{esc(r["status"].replace("_", " ").lower())}; {esc(r["notes"])}</td></tr>'
-                       for e, h, ln, r in missing) + "</table></div>")
+        nos = ('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>Swimmer</th>'
+               '<th>Lane sheet</th></tr>' + "".join(
+                   f'<tr><td><a href="#{swim_id(e, h, ln)}">{e}</a></td><td>{h}</td><td>{ln}</td>'
+                   f'<td>{esc(r["swimmerName"])}</td><td><a href="#{sheet_id(e, ln)}">sheet</a> '
+                   f'{esc(r["status"].replace("_", " ").lower())}; {esc(r["notes"])}</td></tr>'
+                   for e, h, ln, r in missing) + "</table></div>")
     else:
-        out.append('<p class="muted">None.</p>')
+        nos = '<p class="muted">None.</p>'
+    dq.append(f'<details class="sheet" id="dq-noslip"><summary><h3>DQ marked on a lane sheet with no slip</h3> '
+              f'<span class="badge {"bad" if missing else "ok"}">{len(missing)}</span></summary>{nos}</details>')
+    out.append(section("dq", "DQs", "".join(dq), f' <span class="badge minor">{len(slip_rows)} slips</span>'))
 
-    out.append(f'<h2 id="results">Full result review</h2><p class="muted">Every swim by event, heat and lane. '
-               f'Shaded SW times were read with medium (yellow) or low (orange) confidence; * marks a time overwritten '
-               f'on the sheet.</p>')
+    review = [f'<p class="muted">Every swim by event, heat and lane. Shaded SW times were read with medium (yellow) or '
+              f'low (orange) confidence; * marks a time overwritten on the sheet.</p>']
     for e in sorted(results):
         rs = results[e]
         flags = sum(r["serious"] for r in rs)
         badge = (f'<span class="badge bad">{flags} serious</span>' if flags else '<span class="badge ok">no serious '
                  'issues</span>')
-        out.append(f'<details class="sheet" open><summary><h3 id="e{e}">Event {e} {esc(audit.events[e])} {badge}'
-                   f'</h3></summary><div class="wrap"><table>{HEAD.format(lead="")}'
-                   + "".join(result_row(r) for r in rs) + "</table></div></details>")
+        review.append(f'<details class="sheet" id="e{e}"><summary><h3>Event {e} {esc(audit.events[e])} {badge}'
+                      f'</h3></summary><div class="wrap"><table>{HEAD.format(lead="")}'
+                      + "".join(result_row(audit, r) for r in rs) + "</table></div></details>")
+    out.append(section("results", "Full result review", "".join(review),
+                       f' <span class="badge minor">{len(results)} events</span>'))
 
-    out.append('<h2 id="sheets">Lane sheets</h2><div class="wrap"><table><tr><th>Event</th><th>Lane</th><th>Page</th>'
-               '<th>Signed</th><th>Unreadable SW</th><th>Medium/low SW</th><th>Overwritten SW</th></tr>')
+    sheets = ['<p class="muted">The event goes to its results, the page opens the scan, and a heat goes to the swim.'
+              '</p><div class="wrap"><table><tr><th>Event</th><th>Lane</th><th>Page</th><th>Heats</th>'
+              '<th>Signed</th><th>Unreadable SW</th><th>Medium/low SW</th><th>Overwritten SW</th></tr>']
     for (e, ln), s in sorted(audit.sheets.items()):
         hts = [t for r in s["rows"] for t in r["handTimes"]]
-        out.append(f'<tr><td><a href="#e{e}">{e}</a></td><td>{ln}</td><td>{s["_page"]}</td><td>'
-                   + ('<span class="badge ok">signed</span>' if s["signed"] else '<span class="badge bad">NOT SIGNED</span>')
-                   + f'</td><td>{sum(1 for t in hts if not t["normalized"]) or ""}</td>'
-                   f'<td>{sum(1 for t in hts if t["normalized"] and t["confidence"] != "HIGH") or ""}</td>'
-                   f'<td>{sum(1 for t in hts if t["corrected"]) or ""}</td></tr>')
+        heats = " ".join(f'<a href="#{swim_id(e, h, ln)}">{h}</a>' for h, r in enumerate(s["rows"], 1)
+                         if r["status"] != "NO_SWIMMER")
+        sheets.append(f'<tr id="{sheet_id(e, ln)}"><td><a href="#e{e}">{e}</a></td><td>{ln}</td>'
+                      f'<td>{scan_link(urls, s)}</td><td class="links">{heats}</td><td>'
+                      + ('<span class="badge ok">signed</span>' if s["signed"] else '<span class="badge bad">NOT SIGNED</span>')
+                      + f'</td><td>{sum(1 for t in hts if not t["normalized"]) or ""}</td>'
+                      f'<td>{sum(1 for t in hts if t["normalized"] and t["confidence"] != "HIGH") or ""}</td>'
+                      f'<td>{sum(1 for t in hts if t["corrected"]) or ""}</td></tr>')
     have = set(audit.sheets)
     lanes = sorted({ln for _, ln in have})
     gone = [(e, ln) for e in sorted(audit.events) for ln in lanes if (e, ln) not in have]
-    out.append("</table></div>" + (f'<p>No lane sheet: {", ".join(f"event {e} lane {ln}" for e, ln in gone)}.</p>'
-                                    if gone else ""))
-    out.append("</body></html>")
+    sheets.append("</table></div>" + (f'<p>No lane sheet: {", ".join(f"event {e} lane {ln}" for e, ln in gone)}.</p>'
+                                       if gone else ""))
+    unsigned = sum(1 for s in audit.sheets.values() if not s["signed"])
+    out.append(section("sheets", "Lane sheets", "".join(sheets),
+                       f' <span class="badge minor">{len(audit.sheets)} sheets</span>'
+                       + (f' <span class="badge bad">{unsigned} not signed</span>' if unsigned else "")))
+    out.append(f"<script>{JS}</script></body></html>")
     return "\n".join(out)
 
 
@@ -606,8 +696,9 @@ def main():
     codes = load_codes(args[args.index("--codes") + 1] if "--codes" in args else DQ_CODES)
     given = pathlib.Path(args[0]) / "dq-codes.json"
     assigned = json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
+    urls = dict(args[i + 1].split("=", 1) for i, a in enumerate(args) if a == "--scan-url")
     audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned)
-    pathlib.Path(args[2]).write_text(build(audit, tol), encoding="utf-8")
+    pathlib.Path(args[2]).write_text(build(audit, tol, urls), encoding="utf-8")
     print(f"Wrote {args[2]}")
 
 
