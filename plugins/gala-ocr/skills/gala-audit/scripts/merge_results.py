@@ -11,7 +11,8 @@ exported for the same meet: its header (A1, B1, B2) is copied, with today's date
 show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
 32, where MM writes 1 for seeded and S for scored), then:
 - E2: the final time; the pad (TP) time; up to three backup times: the lane sheet (SW) times when the final time comes
-  from them or TP was kept in doubt, otherwise the Gen7 buttons (as Meet Manager writes them for a pad time); the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
+  from them or TP was kept in doubt, otherwise the Gen7 buttons (as Meet Manager writes them for a pad time), or,
+  with no PB time, the SW median (thousandths dropped) as backup 1; the heat, lane, place in the heat and place in the swimmer's age group; "A" when the final
   time is not the pad time. A DQ (a slip in OCR_DIR, coded in dq-codes.json) is "Q" with the code in Hy-Tek's form
   (stroke number and letter: BaG -> 2G); a lane sheet no-show is "R"; an entry not seeded in a heat has no result.
 - G1: the Gen7 splits before the finish.
@@ -202,6 +203,9 @@ def main():
         from_tp = res["tp"] is not None and res["final"] == res["tp"] and not res["swOverride"]
         use_sw = res["sw"] and (not from_tp or res["swDoubt"])
         backups = [v for _, v, _ in res["sw"]][:3] if use_sw else button_times(res)
+        # TP with no PB time to back it: the SW median goes in as backup 1.
+        if res["swBackup"]:
+            backups = [int(res["median"])]
         for k in range(3):
             e2 = put(e2, 36 + 8 * k, tm(backups[k] if k < len(backups) else 0))
         # A pad time less than half the final time is a stray touch, which Meet Manager drops.

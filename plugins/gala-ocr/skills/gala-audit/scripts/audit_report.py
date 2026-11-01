@@ -265,9 +265,15 @@ class Audit:
         elif pb is not None:
             final = pb
             note("No TP or SW time; PB used", "warn")
+        # TP kept with no PB to back it: the merge file carries the SW median as its backup.
+        res["swBackup"] = (final is not None and final == tp and not res["swDoubt"] and pb is None
+                           and med is not None)
+        if res["swBackup"]:
+            note(f"No PB time; SW median {fmt(int(med))} written as backup 1 in the merge file")
         if res["ns"]:
             del res["notes"][before:]
             final = None
+            res["swBackup"] = False
         res["final"] = final
 
         # A single SW time far from the final time is probably a misread or a slip of the pen.
@@ -618,7 +624,8 @@ def build(audit, tol, urls=None):
            'otherwise the SW median overrides it, even when TP agrees with PB (both are noted as outside the SW '
            'median; a TP that agrees with neither is a bad TP). TP alone when there are no SW times. In doubt (fewer '
            'than two SW times within the tolerance of their median, and PB not within it either), TP '
-           'stays the final time and the SW times are copied to the merge file.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
+           'stays the final time and the SW times are copied to the merge file. When TP is the final time and there is '
+           'no PB time, the SW median (thousandths dropped) is written as backup 1 in the merge file.</li><li>With no TP time: the SW median, thousandths dropped. A PB outside the tolerance of it is a '
            'bad PB; if adding PB moves the median by more than the tolerance, an SW time is poor and is named when '
            'it can be picked out. PB alone when there are no SW times.</li>'
            '<li>A no-show on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has '
