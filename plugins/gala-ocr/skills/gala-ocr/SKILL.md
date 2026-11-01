@@ -187,8 +187,9 @@ Example (names are made up):
 The ETD programme is the Meet Manager meet programme (`#3 Men 100 LC Meter Backstroke`, then `Heat 1 of 9 Finals
 Starts at 09:08 AM` and its lanes, two or three columns to a page) on which the timing operator has written, circled
 or not, the **race data record number** beside each heat: the number the timing system (e.g. Colorado Gen7) gave
-the race. It links each programme heat to its record in the timing system. The numbers mostly rise by one per heat,
-but not always: a heat started twice (a false start, a re-swim) gets two numbers, or only the second is written;
+the race. It links each programme heat to its record in the timing system. The numbers run **in sequence** down the
+programme, one per race, with gaps only where the timing system has a race with no finishes (a false or manual
+start whose re-start got the next number). Beyond that: a heat started twice (a false start, a re-swim) gets two numbers, or only the second is written;
 events swum together as one race share a number; and a heat not swum has none, or a crossed-out one.
 
 Check the scan is the one the user named (`pdfinfo` for the page count and size). If it is missing, ask; don't pick
@@ -203,11 +204,19 @@ another file that looks likely. For each page not yet done:
    of.
 3. **If there is a Gen7 race report** (the session report the timing system prints), read it with the
    gen7-report skill's script, `python3 -I $SKILL/../gen7-report/scripts/gen7_report.py <report>.pdf` (each race's
-   number, event, heat, start time and lanes). Use it to check each number and to tell which heat a number beside a
-   column break belongs to, never to fill in a number that is not written, and never to raise the confidence of a
-   digit that is hard to read. Races with no finishes (a manual or false start, e.g. race 1 before race 2 of the same
-   heat) usually have no number written: note them in your summary, don't add them to `written`.
-4. **Write the file** (shape below), then validate it.
+   number, event, heat, start time and lanes). Use it, with the sequence, to check each number and to tell which heat
+   a number beside a column break belongs to. Races with no finishes (a manual or false start, e.g. race 1 before
+   race 2 of the same heat) are the gaps in the sequence and usually have no number written: note them in your
+   summary, don't add them to `written`.
+4. **Use the sequence as a hint for an ambiguous digit.** When a digit could be one of two (1/7, 3/8, 4/9, 6/0) and
+   only one reading fits between the numbers before and after it, and is the Gen7 race for that event and heat, take
+   that reading, keep `confidence` at `MEDIUM`, and add `read with the sequence` to `notes`. Never use the sequence
+   or the report to supply a number that is not written, or to read a digit you cannot see at all (that stays
+   `LOW`).
+5. **Write the file** (shape below), then validate it. When every page is done and there is a race report, run
+   `python3 -I $SKILL/scripts/check_etd.py <output folder> <report>.pdf`. It lists numbers out of sequence, gaps
+   that are not empty Gen7 races, Gen7 races with finishes that no heat has, and numbers whose Gen7 race is another
+   heat. Look again at each one on the page; fix only what you misread, and report the rest.
 
 ### ETD programme rules
 
