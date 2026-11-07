@@ -241,7 +241,7 @@ def main():
 
 def stamp(a1):
     """The template's A1 line with now as the file's date and time."""
-    m = re.search(r"\d{8} \d{1,2}:\d{2} [AP]M", a1)
+    m = re.search(r"\d{8} +\d{1,2}:\d{2} [AP]M", a1)  # Meet Manager pads a one-digit hour: "11062026  5:25 PM"
     now = datetime.now()
     text = f"{now:%m%d%Y} {now.strftime('%I:%M %p').lstrip('0').rjust(len(m[0]) - 9)}"
     return a1[:m.start()] + text.ljust(len(m[0])) + a1[m.end():]

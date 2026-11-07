@@ -28,6 +28,7 @@ import tempfile
 
 WORD = re.compile(r'<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</word>')
 EVENT = re.compile(r"Event:\s*(\d+)\s+Heat:\s*(\d+)\s+Race\s*#\s*(\d+)")
+SPLIT_LABEL = re.compile(r"^\d+m$")  # "100m", "200m": a split row's distance, not a labelled row
 TIME = re.compile(r"^\*?-?(\d{1,2}:)?\d{1,2}\.\d{2}$")
 LINE = re.compile(r'<path style="([^"]*)" d="M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+) "\s*'
                   r'(?:transform="matrix\(([^)]*)\)")?')
@@ -68,7 +69,8 @@ def underlines(pdf):
         subprocess.run(["pdftocairo", "-svg", pdf, f"{tmp}/r.svg"], check=True)
         with open(f"{tmp}/r.svg", encoding="utf-8") as f:
             svg = f.read()
-    for page in svg.split("<page>")[1:]:
+    # A one-page PDF's SVG has no <page> elements.
+    for page in svg.split("<page>")[1:] or [svg]:
         lines = []
         for m in LINE.finditer(re.sub(r"<symbol.*?</symbol>", "", page, flags=re.S)):
             style, x0, y0, x1, y1, tf = m.groups()
@@ -144,6 +146,8 @@ def race(lines, page_no, rules=()):
     for _, words in lines[grid + 1:]:
         label = text([w for w in words if w[1] < first - 2 and not TIME.match(w[2].strip("()"))])
         values = [w for w in words if not (w[1] < first - 2 and not TIME.match(w[2].strip("()")))]
+        if SPLIT_LABEL.match(label):
+            label = ""
         if label.startswith("Gen7"):
             break
         if not label and any(TIME.match(w[2]) for w in values):
