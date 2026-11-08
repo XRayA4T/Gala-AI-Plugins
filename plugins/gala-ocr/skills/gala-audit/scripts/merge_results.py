@@ -112,7 +112,9 @@ def main():
 
     tpl = read(template)
     base = next(ln for ln in tpl if ln.startswith("E2") and ln[12] == " " and ln[11] == "L")
-    unseeded = next((ln for ln in tpl if ln.startswith("E2") and ln[11] == " "), None)
+    # An entry with no result: no time, no status and heat 0 (a done event's export has the course on it too).
+    unseeded = next((ln for ln in tpl if ln.startswith("E2") and ln[3:11].strip() == "0,00" and ln[12] == " "
+                     and not ln[20:23].strip("0 ")), None)
     meet_date = base[87:95]
 
     # The entries file: C1 (team), D1 (swimmer), E1 (entry) and the E2 with the seeded heat and lane.
@@ -193,7 +195,12 @@ def main():
         lines += [out_line(s["c1"]), out_line(s["d1"]), out_line(put(s["e1"], 31, "A"))]
         # In a done event Meet Manager writes the course on every result, and a 0 in column 100.
         if not s["heat"]:
-            e2 = unseeded or put(put(base, 3, tm(0)), 11, " ")
+            e2 = unseeded
+            if not e2:
+                e2 = put(put(put(base, 3, tm(0)), 12, "   "), 20, f"{0:3d}{0:3d}{0:3d}{0:4d}")
+                for k in range(3):
+                    e2 = put(e2, 36 + 8 * k, tm(0))
+                e2 = put(put(e2, 63, tm(0, 10)), 95, " ")
             lines.append(out_line(put(put(put(e2, 87, meet_date), 11, "L"), 99, "0")))
             continue
         res = s["res"]
