@@ -720,6 +720,8 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
     dq-codes.json), and a DQ marked on a sheet with no slip; and, given our merge file (by_swim from hy3), a lane sheet swim not in it, a different
     swimmer there, or a DQ with no code."""
     fixes = defaultdict(list)
+    slips = defaultdict(list)  # the DQ slips a swim's checks are about
+    on_sheet = set()  # swims with a check about the lane sheet
     for r in allres:
         key = (r["event"], r["heat"], r["lane"])
         from_sw = r["final"] is not None and (r["final"] != r["tp"] or r["swDoubt"])
@@ -741,8 +743,11 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         row = r["row"]
         if row and row["status"] != "NO_SHOW" and WRITTEN_IN.search(row["notes"] or ""):
             fixes[key].append("A swimmer is written in over the printed one: check the entry the swim is given to")
+    on_sheet.update(fixes)
+    slip_of = {(s["eventNumber"], s["heat"], s["lane"]): s for s, _, _ in slip_rows}
     for s, row, f in slip_rows:
         key = (s["eventNumber"], s["heat"], s["lane"])
+        before = len(fixes.get(key, []))
         given = audit.assigned.get(s["_file"], {})
         code = given.get("code", "")
         if code and given.get("note"):
@@ -754,8 +759,11 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         for lv, t in f:
             if lv == "serious" and ("lane sheet" in t or "Not signed" in t):
                 fixes[key].append(f"DQ slip: {t}")
+        if len(fixes.get(key, [])) > before:
+            slips[key].append(s)
     for e, h, ln, _ in missing:
         fixes[(e, h, ln)].append("DQ marked on the lane sheet but there is no slip")
+        on_sheet.add((e, h, ln))
     if merge is not None:
         for (e, ln), sheet in audit.sheets.items():
             for h, row in enumerate(sheet["rows"], start=1):
@@ -764,11 +772,17 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                 m = merge.get((e, h, ln))
                 if m is None:
                     fixes[(e, h, ln)].append("Swam on the lane sheet but not in the merge file: enter the swim")
+                    on_sheet.add((e, h, ln))
                 elif surname_key(row["swimmerName"]) != surname_key(m["surname"]):
                     fixes[(e, h, ln)].append("The lane sheet swimmer is not the one in the merge file: check the swimmer")
+                    on_sheet.add((e, h, ln))
         for key, m in merge.items():
             if m["status"] == "Q" and not m["code"]:
                 fixes[key].append("DQ in the merge file with no code: enter the code in Meet Manager")
+                if key in slip_of and slip_of[key] not in slips[key]:
+                    slips[key].append(slip_of[key])
+                else:
+                    on_sheet.add(key)
     by_key = {(r["event"], r["heat"], r["lane"]): r for r in allres}
     out = []
     for key in sorted(fixes):
@@ -781,21 +795,35 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                    else fmt(m["time"]))
         else:
             has = ("N/S" if r and r["ns"] else fmt(r["final"]) if r and r["final"] is not None else "no time")
-        out.append({"event": key[0], "heat": key[1], "lane": key[2], "inFile": has, "checks": checks})
+        # The scans to look at: the DQ slip for a DQ check, the lane sheet for the rest.
+        sheet = audit.sheets.get((key[0], key[2]))
+        scans = [{"label": "DQ slip", "id": slip_id(s), "scan": s["_scan"], "page": s["_page"]} for s in slips[key]]
+        if sheet and (key in on_sheet or not scans):
+            scans.insert(0, {"label": "Lane sheet", "id": sheet_id(key[0], key[2]), "scan": sheet["_scan"],
+                             "page": sheet["_page"]})
+        out.append({"event": key[0], "heat": key[1], "lane": key[2], "inFile": has, "checks": checks, "scans": scans})
     return out
 
 
-def quick_fix_table(items, done=False):
-    """The Quick Fix table: event, heat, lane, what the merge file has, what to check. In the report (not done) the
-    event links to the swim; the list on its own has a Done box instead."""
+def quick_fix_table(items, scans=None, done=False):
+    """The Quick Fix table: event, heat, lane, what the merge file has, what to check, and the scan to look at. In the
+    report (not done) the event links to the swim and the scan to its page embedded under the sheet or slip; the list on
+    its own names the scan file and page, and has a Done box instead."""
     def ev(i):
         return str(i["event"]) if done else f'<a href="#{swim_id(i["event"], i["heat"], i["lane"])}">{i["event"]}</a>'
+
+    def scan(x):
+        text = f'{x["label"]} p{x["page"]}'
+        if done or not scans.image(x["scan"], x["page"]):
+            return f'{text} ({esc(x["scan"])})'
+        return f'<a href="#{scan_id(x["id"])}" title="{esc(x["scan"])} page {x["page"]}">{text}</a>'
     if not items:
         return '<p class="muted">None.</p>'
     return ('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>In the merge file</th>'
-            '<th>Check</th>' + ('<th>Done</th>' if done else '') + '</tr>' + "".join(
+            '<th>Check</th><th>Scan</th>' + ('<th>Done</th>' if done else '') + '</tr>' + "".join(
                 f'<tr><td>{ev(i)}</td><td>{i["heat"]}</td><td>{i["lane"]}</td><td class="t">{esc(i["inFile"])}</td>'
                 f'<td><ul class="findings">{"".join(f"<li>{esc(c)}</li>" for c in i["checks"])}</ul></td>'
+                f'<td class="links">{"<br>".join(scan(x) for x in i.get("scans", []))}</td>'
                 + ('<td class="box">&#9744;</td>' if done else '') + '</tr>' for i in items) + '</table></div>')
 
 
@@ -906,7 +934,7 @@ def build(audit, tol, scans, merge=None):
                                 for n, e, h, d, why in ignored) + "</table>" if ignored else "")),
            section("quickfix", "Quick Fix", f'<p class="muted">{QUICK_FIX_NOTE}'
                    + ('' if merge is not None else ' Run with --merge to check the merge file too.') + '</p>'
-                   + quick_fix_table(fixes), f' <span class="badge {"bad" if fixes else "ok"}">{len(fixes)} swims</span>'),
+                   + quick_fix_table(fixes, scans), f' <span class="badge {"bad" if fixes else "ok"}">{len(fixes)} swims</span>'),
            section("touchpads", "Touchpads",
                    '<p class="muted">Touch pad touches Gen7 recorded, by lane, against those expected for every swim '
                    'with a final time. Gen7 prints one split row per 100 m, at the touch pad end: a race of 200 m or '

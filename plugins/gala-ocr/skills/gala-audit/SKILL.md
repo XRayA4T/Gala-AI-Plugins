@@ -115,6 +115,10 @@ quickly in Meet Manager once the merge results are imported:
 - with `--merge`: a lane sheet swim missing from the merge file (left out or with no entry), a different swimmer in
   the merge file than on the sheet, and a DQ in it with no code.
 
+Each line's Scan column links to the scan to look at: the DQ slip for a DQ check, the lane sheet for the rest (both
+when the swim has both kinds of check). In the report the link opens that page embedded under the sheet or slip; the
+`--quick-fixes` page, which has no scans, names the scan file and page instead.
+
 Everything else stays in its own section: Gen7 differences in Serious issues and SW overrides, the other DQ codes in
 DQs. Keep it short; it is a to-do list, not a second copy of the report.
 
