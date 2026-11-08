@@ -2,7 +2,11 @@
 """Read a Colorado Gen7 session report (the PDF Gen7 prints, one race per page) into JSON or CSV. No OCR: the PDF
 has a text layer, and each value is placed in its lane column by its position on the page.
 
-Usage: gen7_report.py REPORT.pdf [--event N] [--csv]
+Usage: gen7_report.py REPORT.pdf|FOLDER [MORE.pdf ...] [--event N] [--csv]
+
+REPORT can be the session report (one race per page) or Gen7's race-by-race PDFs: give a folder (every *.pdf in it)
+or several files. Then the races are in race number order, each with `file`, and a race printed twice is taken from
+the newer file.
 
 JSON (default): a list of races in report order:
   {race, page, meet, session, eventNumber, heat, eventDescription, startTime, manualStart, lanes}
@@ -22,6 +26,7 @@ Needs poppler's pdftotext and pdftocairo (for the underlines, which are drawn li
 import csv
 import html
 import json
+import pathlib
 import re
 import subprocess
 import sys
@@ -177,19 +182,55 @@ def race(lines, page_no, rules=()):
     return r
 
 
-def races(pdf):
+def pdf_files(source):
+    """The PDFs a source names: a file, a folder (every *.pdf in it, not its subfolders), or a list of either."""
+    if isinstance(source, (list, tuple)):
+        return [f for s in source for f in pdf_files(s)]
+    p = pathlib.Path(source)
+    if p.is_dir():
+        return sorted((f for f in p.iterdir() if f.is_file() and f.suffix.lower() == ".pdf"
+                       and not f.name.startswith(".")), key=lambda f: f.name.lower())
+    return [p]
+
+
+def races_in(pdf):
+    """The races in one PDF, in page order."""
     out = []
-    for no, (lines, rules) in enumerate(zip(pages(pdf), underlines(pdf)), start=1):
+    for no, (lines, rules) in enumerate(zip(pages(str(pdf)), underlines(str(pdf))), start=1):
         if lines and (r := race(lines, no, rules)):
             out.append(r)
     return out
+
+
+def races(source):
+    """The races in a session report, or in Gen7's race-by-race PDFs: SOURCE is a PDF, a folder of PDFs or a list.
+    With more than one PDF each race also has `file` (the PDF's name), the races are in race number order, and a
+    race printed more than once (a reprint after a correction) is taken from the newest file. Race numbers are
+    matched within a session, so a folder can hold more than one session's races."""
+    files = pdf_files(source)
+    if len(files) == 1:
+        return races_in(files[0])
+    best = {}
+    for f in files:
+        mtime = f.stat().st_mtime
+        for r in races_in(f):
+            r["file"] = f.name
+            key = (r["session"], r["race"])
+            if key not in best or mtime >= best[key][0]:
+                best[key] = (mtime, r)
+    return sorted((r for _, r in best.values()), key=lambda r: (r["session"], r["race"]))
 
 
 def main():
     args = sys.argv[1:]
     if not args or args[0].startswith("-"):
         sys.exit(__doc__)
-    found = races(args[0])
+    paths = []
+    for a in args:
+        if a.startswith("-"):
+            break
+        paths.append(a)
+    found = races(paths if len(paths) > 1 else paths[0])
     if "--event" in args:
         found = [r for r in found if r["eventNumber"] == int(args[args.index("--event") + 1])]
     if "--csv" not in args:

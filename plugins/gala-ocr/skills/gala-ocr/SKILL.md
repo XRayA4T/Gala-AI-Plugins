@@ -34,6 +34,10 @@ install rather than working around it.
 | Timing system race report (optional; checks the race numbers) | `pdf/original/*Session*.pdf` |
 | Output folder (the cache) | `data/ocr/` |
 
+During a gala the lane sheets may arrive as **one scan pack per event** (e.g. `pdf/scanned/Event 03 Lane
+Sheets.pdf`) and the DQ slips in batches: each is a separate scan with its own `<scan>` name, so transcribe each
+pack into the same output folder as it arrives; nothing else changes.
+
 If none of these exist and the user has not said, ask for the scan(s) and an output folder. Render images into
 your scratchpad or a temp folder, never into the user's project.
 

@@ -30,7 +30,14 @@ this skill's base directory (the folder this SKILL.md is in).
 python3 -I $SKILL/scripts/gen7_report.py "<report>.pdf"               # JSON, every race
 python3 -I $SKILL/scripts/gen7_report.py "<report>.pdf" --event 7     # one event's races
 python3 -I $SKILL/scripts/gen7_report.py "<report>.pdf" --csv         # one row per lane, for a spreadsheet
+python3 -I $SKILL/scripts/gen7_report.py "<folder of race PDFs>"      # Gen7's race-by-race PDFs, by race number
+python3 -I $SKILL/scripts/gen7_report.py race41.pdf race42.pdf         # or several files
 ```
+
+During a gala Gen7 prints **one PDF per race** instead of the session report. Give the folder (every `*.pdf` in it)
+or the files: the races come out in race number order, each with `file` (the PDF it came from, and `page` within
+it), and a race printed more than once (a reprint after a correction) is taken from the newest file. Races are
+matched by session and race number, but keep one session per folder for the audit.
 
 Write the output where the user asks (e.g. `> data/gen7/session1.json`); with no instruction, write it next to the
 report with the same name and `.json` / `.csv`, and say where it went.

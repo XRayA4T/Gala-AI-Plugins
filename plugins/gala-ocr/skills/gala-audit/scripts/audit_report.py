@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.30] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
+
+GEN7 is the Gen7 session report PDF, or a folder of Gen7's race-by-race PDFs for one session (race numbers are
+matched within the folder, so give one session's races).
+--events limits the report to those events (e.g. during a gala, the events swum so far, or one event); the other
+lane sheets and slips in OCR_DIR are left out. ETD pages for other events are still read, for combined races.
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
 (<scan>-eventEE-heatH-laneL-pPPP.json) and ETD programme pages (<scan>-pPPP.json). The ETD race numbers link each
@@ -115,6 +120,19 @@ def load(ocr_dir):
     return sheets, slips, etd
 
 
+def parse_events(spec):
+    """"3,5-7" -> {3, 5, 6, 7}; None or "" -> None (every event)."""
+    if not spec:
+        return None
+    out = set()
+    for part in str(spec).replace(" ", "").split(","):
+        if not part:
+            continue
+        lo, _, hi = part.partition("-")
+        out.update(range(int(lo), int(hi or lo) + 1))
+    return out
+
+
 def load_codes(path):
     """{code: (description, group)} from a list of "code","description","group" lines."""
     with open(path, encoding="utf-8-sig", newline="") as f:
@@ -158,7 +176,11 @@ def distance(description):
 
 
 class Audit:
-    def __init__(self, sheets, slips, etd, races, tol, codes=None, assigned=None):
+    def __init__(self, sheets, slips, etd, races, tol, codes=None, assigned=None, events=None):
+        self.only = set(events) if events else None
+        if self.only:
+            sheets = {k: v for k, v in sheets.items() if k[0] in self.only}
+            slips = [s for s in slips if s["eventNumber"] in self.only]
         self.sheets, self.slips, self.etd, self.tol = sheets, slips, etd, tol
         self.codes, self.assigned = codes or {}, assigned or {}
         self.races = {r["race"]: r for r in races}
@@ -368,6 +390,8 @@ class Audit:
                     h <= len(s["rows"]) and s["rows"][h - 1]["handTimes"]
                     for (ev, _), s in self.sheets.items() if ev == e):
                 out.append((n, e, h, self.events.get(e, ""), "race not started"))
+        if self.only:
+            out = [x for x in out if x[1] in self.only]
         return sorted(out)
 
     def swimmer_in(self, event, heat, lane):
@@ -1042,7 +1066,11 @@ def main():
     dirs = [pathlib.Path(args[args.index("--scans") + 1])] if "--scans" in args else [ocr.parent, ocr]
     opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default  # noqa: E731
     scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
-    audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned)
+    events = parse_events(args[args.index("--events") + 1]) if "--events" in args else None
+    audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned, events)
+    if not audit.sheets:
+        sys.exit("No lane sheets" + (" for events %s" % args[args.index("--events") + 1] if events else "")
+                 + " in " + args[0])
     merge = hy3.by_swim(args[args.index("--merge") + 1]) if "--merge" in args else None
     page, fixes = build(audit, tol, scans, merge)
     pathlib.Path(args[2]).write_text(page, encoding="utf-8")

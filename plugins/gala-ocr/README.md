@@ -146,9 +146,9 @@ field rules are in [`skills/gala-ocr/SKILL.md`](skills/gala-ocr/SKILL.md).
 | Script | Does |
 |---|---|
 | `scripts/original_sheets.py ORIGINAL.pdf [EVENT [LANE]]` | Prints the lane sheets exactly as Meet Manager printed them, as JSON, from the original (digital) PDF |
-| `../gen7-report/scripts/gen7_report.py REPORT.pdf [--event N] [--csv]` | Reads a Colorado Gen7 session report into JSON (per race) or CSV (per lane): places, times, splits, Off. Time, buttons, backup, P:B Diff, reaction; also used to check ETD race numbers |
+| `../gen7-report/scripts/gen7_report.py REPORT.pdf\|FOLDER [--event N] [--csv]` | Reads a Colorado Gen7 session report, or a folder of its race-by-race PDFs, into JSON (per race) or CSV (per lane): places, times, splits, Off. Time, buttons, backup, P:B Diff, reaction; also used to check ETD race numbers |
 | `scripts/check_etd.py ETD_DIR REPORT.pdf` | Checks ETD race numbers run in sequence, that the gaps are Gen7 races with no finishes, and that each number's Gen7 race is that heat (or one combined with it) |
-| `../gala-audit/scripts/audit_report.py OCR_DIR REPORT.pdf OUT.html` | Builds the gala audit report from the transcriptions and the Gen7 report |
+| `../gala-audit/scripts/audit_report.py OCR_DIR REPORT.pdf\|FOLDER OUT.html [--events 3,5-7]` | Builds the gala audit report from the transcriptions and the Gen7 report (or one session's race PDFs); `--events` audits just those events, e.g. event by event during a gala |
 | `../gala-audit/scripts/merge_results.py OCR_DIR REPORT.pdf ENTRIES.hy3 RESULTS.hy3 OUT.hy3` | Writes a Meet Manager merge results file with the audited results |
 | `scripts/validate_cache.py FILE_OR_DIR...` | Checks transcription files have exactly the expected fields, types, values and file names; exits 1 on any problem |
 

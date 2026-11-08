@@ -2,8 +2,12 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7_REPORT.pdf ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--tolerance 0.30]
+Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--events 1-12] [--tolerance 0.30]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
+
+GEN7 is the session report PDF or a folder of one session's race-by-race PDFs. For a gala run session by session,
+give that session's entries export, merge results export and Gen7 folder; --events limits the file to those events
+(by default every event in ENTRIES.hy3).
 
 ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<meet>.zip"): every swimmer (D1), team
 (C1) and entry (E1), with the heat and lane each was seeded in (E2). RESULTS.hy3 is a merge results file Meet Manager
@@ -108,7 +112,8 @@ def main():
     sheets, slips, etd = ar.load(ocr)
     given = pathlib.Path(ocr) / "dq-codes.json"
     assigned = ar.json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
-    audit = ar.Audit(sheets, slips, etd, ar.gen7_report.races(gen7), tol, codes, assigned)
+    events = ar.parse_events(opt("--events", None))
+    audit = ar.Audit(sheets, slips, etd, ar.gen7_report.races(gen7), tol, codes, assigned, events)
 
     tpl = read(template)
     base = next(ln for ln in tpl if ln.startswith("E2") and ln[12] == " " and ln[11] == "L")
@@ -131,6 +136,9 @@ def main():
             lane = int(seed[23:26] or 0) if seed[23:26].strip() else 0
             swims.append({"c1": c1, "d1": d1, "e1": ln, "event": int(ln[38:42]), "heat": heat, "lane": lane,
                           "age": int(d1[96:99]), "time": 0, "status": "", "problems": []})
+
+    if events:
+        swims = [s for s in swims if s["event"] in events]
 
     problems, used = [], set()
     # A lane sheet swimmer other than the one seeded there: if they have an entry in the event, the swim is theirs.

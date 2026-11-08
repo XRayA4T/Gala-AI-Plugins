@@ -45,8 +45,26 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"]
 ```
+
+`<gen7>` is the Gen7 session report PDF, or a **folder of Gen7's race-by-race PDFs** for one session (one PDF per
+race, as Gen7 prints them during a gala). Race numbers are matched within it, so give one session's races only; a
+race printed twice is taken from the newer file. `--events` limits the report to those events.
+
+### During a gala: event by event, session by session
+
+When the audit runs while the gala is still on, the paperwork arrives in pieces: a scan pack of lane sheets per
+event, Gen7 PDFs race by race, and per session the meet entries export and a merge results export.
+
+- **As each event is in** (its lane sheet pack transcribed with gala-ocr, its heats' Gen7 PDFs in the session's
+  folder): run the audit for that event (`--events N`) so problems reach the officials while they are still at the
+  pool, and again for the session so far (`--events` with the session's events done so far) to keep one up-to-date
+  session report. Events still to come are left out, so they are not reported as missing.
+- **At the end of the session:** DQ codes for the session's slips, the session report with `--merge` once the merge
+  results file is written, then the merge results file for the session (below) from that session's entries export,
+  merge results export and Gen7 folder (`--events` with the session's events if the entries export covers more).
+- **The final audit** is per session too: our session merge results against Meet Manager's final export.
 
 Once the merge results file is written (below), run the audit again with `--merge` so the Quick Fix section checks it
 and shows what it has for each swim; `--quick-fixes` also writes the Quick Fix list on its own, to print (no
@@ -75,7 +93,7 @@ meet's entries export (the `Hfile*.hy3` inside `Meet Entries-<meet>.zip`; unzip 
 results file Meet Manager exported for this meet (its header and layout are copied):
 
 ```
-python3 -I $SKILL/scripts/merge_results.py <ocr folder> "<gen7 report>.pdf" <entries>.hy3 "<merge results>.hy3" "<out>.hy3"
+python3 -I $SKILL/scripts/merge_results.py <ocr folder> <gen7> <entries>.hy3 "<merge results>.hy3" "<out>.hy3" [--events 1-12]
 ```
 
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
