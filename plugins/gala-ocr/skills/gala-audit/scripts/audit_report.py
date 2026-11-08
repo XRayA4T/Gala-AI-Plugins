@@ -870,7 +870,15 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         if sheet and (key in on_sheet or not scans):
             scans.insert(0, {"label": "Lane sheet", "id": sheet_id(key[0], key[2]), "scan": sheet["_scan"],
                              "page": sheet["_page"]})
-        out.append({"event": key[0], "heat": key[1], "lane": key[2], "inFile": has, "checks": checks, "scans": scans})
+        times = None
+        if r:
+            f = lambda v: fmt(v) if v is not None else ""  # noqa: E731
+            times = {"tp": f(r["tp"]), "pb": f(r["pb"]), "median": f(r["median"]), "final": f(r["final"]),
+                     "official": f(r["official"]), "tolerance": audit.tol / 100,
+                     "sw": [{"column": c, "time": fmt(v), "written": t.get("written", ""), "confidence":
+                             t.get("confidence", ""), "corrected": bool(t.get("corrected"))} for c, v, t in r["sw"]]}
+        out.append({"event": key[0], "heat": key[1], "lane": key[2], "inFile": has, "checks": checks, "scans": scans,
+                    "times": times})
     return out
 
 
