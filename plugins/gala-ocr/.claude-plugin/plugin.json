@@ -1,6 +1,6 @@
 {
   "name": "gala-ocr",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "license": "MIT",
   "description": "Transcribe scanned swimming lane sheets (printed entries plus handwritten timekeeper times) referees' DQ slips and the race numbers written on an ETD programme into structured JSON, with no API key or OCR engine needed.",
   "author": {

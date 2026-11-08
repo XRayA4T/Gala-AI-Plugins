@@ -90,6 +90,11 @@ def first(d1):
     return re.sub(r"[^a-z]", "", d1[28:48].lower())
 
 
+def firsts(d1):
+    """The swimmer's first name and preferred name (D1 columns 49-68), e.g. a legal first name and a nickname."""
+    return {x for x in (first(d1), re.sub(r"[^a-z]", "", d1[48:68].lower())) if x}
+
+
 def first_of(name):
     return re.sub(r"[^a-z]", "", (name.split(",", 1) + [""])[1].split()[0].lower()) if "," in name else ""
 
@@ -164,7 +169,7 @@ def main():
                     continue
                 pool = [s for s in no_seed if s["event"] == e and not s["heat"]
                         and surname(s["d1"][8:28]) == surname(name)]
-                cand = [s for s in pool if first(s["d1"]) == first_of(name)] or (pool if len(pool) == 1 else [])
+                cand = [s for s in pool if first_of(name) in firsts(s["d1"])] or (pool if len(pool) == 1 else [])
                 if len(cand) == 1:
                     cand[0]["heat"], cand[0]["lane"] = h, ln
                     taken.add((e, h, ln))
@@ -183,7 +188,7 @@ def main():
         if not row or not row["swimmerName"] or surname(row["swimmerName"]) == surname(s["d1"][8:28]):
             continue
         swap = [o for o in swims if o["event"] == s["event"] and surname(o["d1"][8:28]) == surname(row["swimmerName"])
-                and first(o["d1"]) == first_of(row["swimmerName"])]
+                and first_of(row["swimmerName"]) in firsts(o["d1"])]
         if len(swap) == 1:
             o = swap[0]
             o["heat"], o["lane"], s["heat"], s["lane"] = s["heat"], s["lane"], 0, 0
@@ -232,6 +237,7 @@ def main():
             problems.append(f"{who}: {sw.get('name') or sid} had no entry in event {e}; an entry was added for the "
                             f"confirmed swim (check it in Meet Manager after the import)")
         mine["heat"], mine["lane"] = h, ln
+        problems = [p for p in problems if not (p.startswith(who + " ") and "couldn't be seeded" in p)]
 
     for s in swims:
         if not s["heat"]:
