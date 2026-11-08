@@ -2,9 +2,12 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--events 1-12] [--tolerance 0.30]
+Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--events 1-12] [--fixes FIXES.json] [--tolerance 0.30]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
+--fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
+{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}; they override the
+audited time and status of those swims, and places are worked out with them.
 GEN7 is the session report PDF or a folder of one session's race-by-race PDFs. For a gala run session by session,
 give that session's entries export, merge results export and Gen7 folder; --events limits the file to those events
 (by default every event in ENTRIES.hy3).
@@ -217,6 +220,46 @@ def main():
         for h, row in enumerate(sheet["rows"], start=1):
             if row["status"] in ("SWAM", "DISQUALIFIED") and row["handTimes"] and (e, h, ln) not in used:
                 problems.append(f"E{e} H{h} L{ln}: swam on the lane sheet but has no seeded entry; not in the file")
+
+    # Fixes made by hand (e.g. in the gala audit portal): {"E-H-L": {"time", "status", "code", "note"}}. They override
+    # what the audit worked out for that swim: status "NS" a no-show, "DQ" a DQ with "code" (FINA style), "OK" a swim;
+    # "time" (m:ss.hh) the final time. Places are worked out after them.
+    if opt("--fixes", None):
+        given = ar.json.loads(pathlib.Path(opt("--fixes", None)).read_text(encoding="utf-8"))
+        by_swim = {(s["event"], s["heat"], s["lane"]): s for s in swims if s["heat"]}
+        applied = 0
+        for k, f in sorted(given.items()):
+            m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
+            if not m or not isinstance(f, dict):
+                continue
+            key = tuple(int(x) for x in m.groups())
+            if events and key[0] not in events:
+                continue
+            who = f"E{key[0]} H{key[1]} L{key[2]}"
+            s = by_swim.get(key)
+            if s is None:
+                problems.append(f"{who}: a fix was given but there is no seeded entry in that heat and lane; not applied")
+                continue
+            status, t = (f.get("status") or "").upper(), (f.get("time") or "").strip()
+            v = ar.hundredths(t) if t else None
+            if t and v is None:
+                problems.append(f"{who}: the fixed time {t!r} isn't a time (m:ss.hh); not applied")
+                continue
+            if status == "NS":
+                s["status"], s["time"] = "R", 0
+                s.pop("dq", None)
+            else:
+                if v is not None:
+                    s["time"] = v
+                if status == "DQ":
+                    s["status"], s["dq"] = "Q", hy_code(f.get("code") or "", codes)
+                    if not s["dq"]:
+                        problems.append(f"{who}: fixed as a DQ with no code that maps to Hy-Tek ({f.get('code') or 'none'})")
+                elif status == "OK" or (v is not None and s["status"] == "R"):
+                    s["status"] = ""
+                    s.pop("dq", None)
+            applied += 1
+        print(f"Applied {applied} fix{'es' if applied != 1 else ''} from {opt('--fixes', None)}")
 
     def group(s):
         return next((i for i, (lo, hi) in enumerate(groups) if lo <= s["age"] <= hi), -1)

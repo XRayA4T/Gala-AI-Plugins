@@ -101,6 +101,11 @@ The entries export can be the one made **before the session was seeded** (no hea
 first name, or the surname alone when only that entry has it). The script prints how many it seeded and lists lane
 sheet swimmers it couldn't match.
 
+`--fixes FIXES.json` applies fixes made by hand after the audit (the gala audit portal writes them, one per
+quick-fix swim): `{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}`.
+They override the audited time and status of those swims (a no-show, a DQ with its FINA code, or a corrected time),
+and the places are worked out with them. Don't edit the file; pass it as it is.
+
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt:
