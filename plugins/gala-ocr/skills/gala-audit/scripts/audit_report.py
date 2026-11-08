@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--fixes FIXES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--fixes FIXES.json] [--times TIMES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -1150,6 +1150,14 @@ def main():
                  + " in " + args[0])
     merge = hy3.by_swim(args[args.index("--merge") + 1]) if "--merge" in args else None
     page, fixes = build(audit, tol, scans, merge)
+    if "--times" in args:   # every swim's times, for tools that show them (the gala audit portal)
+        f = lambda v: fmt(v) if v is not None else ""  # noqa: E731
+        rows = [{"event": r["event"], "heat": r["heat"], "lane": r["lane"], "tp": f(r["tp"]), "pb": f(r["pb"]),
+                 "median": f(r["median"]), "final": f(r["final"]), "official": f(r["official"]), "tolerance": tol / 100,
+                 "sw": [{"column": c, "time": fmt(v), "written": t.get("written", ""), "confidence": t.get("confidence", ""),
+                         "corrected": bool(t.get("corrected"))} for c, v, t in r["sw"]]}
+                for rs in audit.results().values() for r in rs]
+        pathlib.Path(args[args.index("--times") + 1]).write_text(json.dumps(rows, indent=1), encoding="utf-8")
     pathlib.Path(args[2]).write_text(page, encoding="utf-8")
     print(f"Wrote {args[2]}: {len(fixes)} swims in Quick Fix")
     if "--quick-fixes" in args:
