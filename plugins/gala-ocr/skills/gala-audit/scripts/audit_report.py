@@ -913,11 +913,23 @@ QUICK_FIX_NOTE = ('Only the swims where the OCR could not settle the result, for
                   'in Serious issues and SW overrides, the other DQ codes in DQs).')
 
 
+def _runs(evs):
+    """[101, 102, 103, 105] -> [(101, 103), (105, 105)]."""
+    out = []
+    for e in evs:
+        if out and e == out[-1][1] + 1:
+            out[-1] = (out[-1][0], e)
+        else:
+            out.append((e, e))
+    return out
+
+
 def quick_fix_page(meet, items, events):
     """The Quick Fix list on its own, to print: no swimmers' names."""
-    span = f"events {events[0]}&ndash;{events[-1]}" if len(events) > 1 else f"event {events[0]}"
+    span = ("events " + ", ".join(f"{a}" if a == b else f"{a}&ndash;{b}" for a, b in _runs(events))
+            if len(events) > 1 else f"event {events[0]}")
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>Quick Fix</title>'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>Quick Fix ({span.replace("&ndash;", "-")})</title>'
             f'<style>{CSS} td.box {{ font-size:18px; text-align:center; }}</style></head><body>'
             f'<h1>Quick Fix: {esc(meet["meetName"])} ({span})</h1>'
             f'<p class="muted">{esc(meet["meetDate"])}. Generated {datetime.now():%Y-%m-%d %H:%M}. '
@@ -970,10 +982,20 @@ def build(audit, tol, scans, merge=None):
     ]
     serious = [r for r in allres if r["serious"]]
     pads, no_race = touchpads(allres)
+    # The events the report covers, in the heading when it isn't the whole gala (an audit event by event or of the
+    # session so far): "Event 102 Mixed 100 LC Meter Butterfly Finals", or "Events 101-103".
+    evs = sorted(audit.events)
+    if audit.only and len(evs) == 1:
+        which = f"Event {evs[0]} {audit.events[evs[0]]}".strip()
+    elif audit.only and evs:
+        which = "Events " + ", ".join(f"{a}" if a == b else f"{a}&ndash;{b}" for a, b in _runs(evs))
+    else:
+        which = ""
     out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-           f'<title>{esc(meet["meetName"])} Audit</title><style>{CSS}</style></head><body>',
-           f'<h1>Gala audit: {esc(meet["meetName"])}</h1>',
+           f'<title>{esc(which.replace("&ndash;", "-")) + " · " if which else ""}{esc(meet["meetName"])} Audit</title>'
+           f'<style>{CSS}</style></head><body>',
+           f'<h1>Gala audit: {esc(meet["meetName"])}{" &middot; " + which if which else ""}</h1>',
            f'<p class="muted">{esc(meet["meetDate"])}. Generated {datetime.now():%Y-%m-%d %H:%M}. Tolerance '
            f'{tol / 100:.2f}s. Sources: lane sheets ({len(audit.sheets)} transcribed), DQ slips ({len(audit.slips)}), '
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
