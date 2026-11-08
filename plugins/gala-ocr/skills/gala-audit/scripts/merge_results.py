@@ -10,7 +10,8 @@ give that session's entries export, merge results export and Gen7 folder; --even
 (by default every event in ENTRIES.hy3).
 
 ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<meet>.zip"): every swimmer (D1), team
-(C1) and entry (E1), with the heat and lane each was seeded in (E2). RESULTS.hy3 is a merge results file Meet Manager
+(C1) and entry (E1), with the heat and lane each was seeded in (E2). An export made before seeding (no E2 lines) works
+too: each entry is then seeded from the lane sheet it is printed on (same event, matched by name). RESULTS.hy3 is a merge results file Meet Manager
 exported for the same meet: its header (A1, B1, B2) is copied, with today's date and time in A1, and its result lines
 show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
 32, where MM writes 1 for seeded and S for scored), then:
@@ -141,6 +142,32 @@ def main():
         swims = [s for s in swims if s["event"] in events]
 
     problems, used = [], set()
+    # An entries export made before the session was seeded (no E2 lines, so no heats or lanes): seed each entry
+    # from the lane sheets, which are printed with the heat and lane of every swimmer. A sheet row is matched to an
+    # entry in the same event by surname and first name, else by surname alone when only one entry has it.
+    no_seed = [s for s in swims if not s["heat"]]
+    if no_seed:
+        taken = {(s["event"], s["heat"], s["lane"]) for s in swims if s["heat"]}
+        placed, unmatched = 0, []
+        for (e, ln), sheet in sorted(sheets.items()):
+            if events and e not in events:
+                continue
+            for h, row in enumerate(sheet["rows"], start=1):
+                name = row["swimmerName"]
+                if not name or (e, h, ln) in taken:
+                    continue
+                pool = [s for s in no_seed if s["event"] == e and not s["heat"]
+                        and surname(s["d1"][8:28]) == surname(name)]
+                cand = [s for s in pool if first(s["d1"]) == first_of(name)] or (pool if len(pool) == 1 else [])
+                if len(cand) == 1:
+                    cand[0]["heat"], cand[0]["lane"] = h, ln
+                    taken.add((e, h, ln))
+                    placed += 1
+                elif row["status"] in ("SWAM", "DISQUALIFIED") or row["handTimes"]:
+                    unmatched.append(f"E{e} H{h} L{ln} {name}")
+        print(f"The entries file has no seeding for {len(no_seed)} entries: {placed} seeded from the lane sheets")
+        for u in unmatched:
+            problems.append(f"{u}: no entry matches the lane sheet's swimmer, so it couldn't be seeded")
     # A lane sheet swimmer other than the one seeded there: if they have an entry in the event, the swim is theirs.
     for s in swims:
         if not s["heat"]:
@@ -185,6 +212,8 @@ def main():
 
     # Lane sheet swimmers with no seeded entry.
     for (e, ln), sheet in sorted(sheets.items()):
+        if events and e not in events:
+            continue
         for h, row in enumerate(sheet["rows"], start=1):
             if row["status"] in ("SWAM", "DISQUALIFIED") and row["handTimes"] and (e, h, ln) not in used:
                 problems.append(f"E{e} H{h} L{ln}: swam on the lane sheet but has no seeded entry; not in the file")

@@ -96,6 +96,11 @@ results file Meet Manager exported for this meet (its header and layout are copi
 python3 -I $SKILL/scripts/merge_results.py <ocr folder> <gen7> <entries>.hy3 "<merge results>.hy3" "<out>.hy3" [--events 1-12]
 ```
 
+The entries export can be the one made **before the session was seeded** (no heats or lanes in it, often named
+"pre-gala"): each entry is then seeded from the lane sheet it is printed on, matched by event and name (surname and
+first name, or the surname alone when only that entry has it). The script prints how many it seeded and lists lane
+sheet swimmers it couldn't match.
+
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,
 the pad time, backup times (the lane sheet times when the final time comes from them or TP was kept in doubt:
