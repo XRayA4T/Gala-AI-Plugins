@@ -6,8 +6,9 @@ Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--events 1
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
 --fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
-{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}; they override the
-audited time and status of those swims, and places are worked out with them.
+{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": "", "watches": {...},
+"swimmer": {...}}}; result fixes override the audited time and status of those swims, and places are worked out
+with them; watch and swimmer fixes change the lane sheet first (see audit_report.apply_hand_fixes).
 GEN7 is the session report PDF or a folder of one session's race-by-race PDFs. For a gala run session by session,
 give that session's entries export, merge results export and Gen7 folder; --events limits the file to those events
 (by default every event in ENTRIES.hy3).
@@ -114,6 +115,8 @@ def main():
     codes = ar.load_codes(opt("--codes", ar.DQ_CODES))
     groups = age_groups(opt("--age-groups", "10U,11,12,13,14,15,16,17O"))
     sheets, slips, etd = ar.load(ocr)
+    if opt("--fixes", None):   # watches accepted or captured by hand, swimmers chosen for written-in names
+        ar.apply_hand_fixes(sheets, opt("--fixes", None))
     given = pathlib.Path(ocr) / "dq-codes.json"
     assigned = ar.json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
     events = ar.parse_events(opt("--events", None))
@@ -230,8 +233,8 @@ def main():
         applied = 0
         for k, f in sorted(given.items()):
             m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
-            if not m or not isinstance(f, dict):
-                continue
+            if not m or not isinstance(f, dict) or not (f.get("status") or f.get("time")):
+                continue   # a lane sheet fix only (watches, swimmer): already applied to the transcriptions
             key = tuple(int(x) for x in m.groups())
             if events and key[0] not in events:
                 continue

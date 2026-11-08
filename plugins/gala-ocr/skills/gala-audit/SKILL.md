@@ -105,6 +105,10 @@ sheet swimmers it couldn't match.
 quick-fix swim): `{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}`.
 They override the audited time and status of those swims (a no-show, a DQ with its FINA code, or a corrected time),
 and the places are worked out with them. Don't edit the file; pass it as it is.
+An entry can also fix the lane sheet itself: `"watches": {"2": {"accepted": true}}` accepts a medium or low confidence
+reading of timer 2 as read, `"watches": {"2": {"time": "1:05.42"}}` replaces it with the time read off the sheet by
+hand, and `"swimmer": {"name": "Surname, First", "id": "..."}` is the entered swimmer chosen for a written-in name.
+Pass the same file to `audit_report.py --fixes` too, so the report and its Quick Fix list use the fixed readings.
 
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,

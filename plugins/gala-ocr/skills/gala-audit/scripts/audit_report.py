@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--fixes FIXES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -131,6 +131,51 @@ def parse_events(spec):
         lo, _, hi = part.partition("-")
         out.update(range(int(lo), int(hi or lo) + 1))
     return out
+
+
+def apply_hand_fixes(sheets, path):
+    """Apply the lane sheet fixes made by hand (the gala audit portal's fixes.json) to the transcriptions, so the
+    audit and the merge results use them: {"<event>-<heat>-<lane>": {"watches": {"<column>": {"accepted": true} or
+    {"time": "1:05.32"}}, "swimmer": {"name": "Surname, First", "id": "..."}}}.
+    A watch accepted as read gets high confidence; a watch captured by hand replaces the reading. A swimmer chosen
+    for a written-in name becomes the row's swimmer (and the written-in note is settled). Returns how many applied."""
+    if not path:
+        return 0
+    given = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    n = 0
+    for k, f in given.items():
+        m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
+        if not m or not isinstance(f, dict):
+            continue
+        e, h, ln = (int(x) for x in m.groups())
+        sheet = sheets.get((e, ln))
+        if not sheet or h > len(sheet["rows"]):
+            continue
+        row = sheet["rows"][h - 1]
+        for col, w in (f.get("watches") or {}).items():
+            if not isinstance(w, dict) or not str(col).isdigit():
+                continue
+            t = next((x for x in row["handTimes"] if x["column"] == int(col)), None)
+            if w.get("time"):
+                if hundredths(w["time"]) is None:
+                    continue
+                if t is None:
+                    t = {"column": int(col)}
+                    row["handTimes"].append(t)
+                    row["handTimes"].sort(key=lambda x: x["column"])
+                t.update(written=w["time"], normalized=w["time"], corrected=False, confidence="HIGH")
+                n += 1
+            elif w.get("accepted") and t is not None and t.get("normalized"):
+                t["confidence"] = "HIGH"
+                n += 1
+        sw = f.get("swimmer")
+        if isinstance(sw, dict) and sw.get("name"):
+            row["swimmerName"] = sw["name"]
+            row["notes"] = ("swimmer confirmed by hand: %s; " % sw["name"]) + WRITTEN_IN.sub("", row["notes"] or "")
+            if row["status"] == "NO_SWIMMER":
+                row["status"] = "SWAM"
+            n += 1
+    return n
 
 
 def load_codes(path):
@@ -1059,6 +1104,8 @@ def main():
         sys.exit(__doc__)
     tol = round(float(args[args.index("--tolerance") + 1]) * 100) if "--tolerance" in args else 30
     sheets, slips, etd = load(args[0])
+    if "--fixes" in args:
+        print(f"Applied {apply_hand_fixes(sheets, args[args.index('--fixes') + 1])} lane sheet fixes made by hand")
     codes = load_codes(args[args.index("--codes") + 1] if "--codes" in args else DQ_CODES)
     given = pathlib.Path(args[0]) / "dq-codes.json"
     assigned = json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
