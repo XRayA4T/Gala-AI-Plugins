@@ -7,13 +7,14 @@ Usage: gen7_report.py REPORT.pdf [--event N] [--csv]
 JSON (default): a list of races in report order:
   {race, page, meet, session, eventNumber, heat, eventDescription, startTime, manualStart, lanes}
 with each lane that has anything recorded:
-  {lane, place, time, splits, offTime, buttonOverride, buttonA, buttonB, buttonC, backup, pbDiff, pbFlagged,
-   reaction}
+  {lane, place, time, splits, offTime, buttonOverride, faultyTouch, buttonA, buttonB, buttonC, backup, pbDiff,
+   pbFlagged, reaction}
 `place` is an integer or null; times are as printed ("3:41.12"), "" when blank. `splits` lists the lane's split
 rows top to bottom as {row, time, split}: the split row (1 = top; one row per 100 m, or one for a 50), the
 cumulative time and, when printed in brackets under it, the split itself. The finish is the race's last row.
 `buttonOverride` is true when the Off. Time is underlined: the official time is a push button time that overrode the
-touch pad. `pbDiff` is the printed difference between the pads and the backup buttons; `pbFlagged` is true when Gen7
+touch pad. `faultyTouch` is true when the lane has a push button time (Button A/B/C or Backup) but no Off. Time:
+read it as a touch pad soft touch or a faulty touch pad. `pbDiff` is the printed difference between the pads and the backup buttons; `pbFlagged` is true when Gen7
 marked it with "*".
 --csv: one row per lane, the race fields repeated and splits joined with "; ".
 Needs poppler's pdftotext and pdftocairo (for the underlines, which are drawn lines, not text).
@@ -118,7 +119,7 @@ def race(lines, page_no, rules=()):
 
     def lane(n):
         return r["lanes"].setdefault(n, {"lane": n, "place": None, "time": "", "splits": [], "offTime": "",
-                                         "buttonOverride": False, "buttonA": "", "buttonB": "", "buttonC": "", "backup": "", "pbDiff": "",
+                                         "buttonOverride": False, "faultyTouch": False, "buttonA": "", "buttonB": "", "buttonC": "", "backup": "", "pbDiff": "",
                                          "pbFlagged": False, "reaction": ""})
 
     # By Lane table: the left half under "Lane Place Time"; By Place, on the right, repeats it.
@@ -167,6 +168,9 @@ def race(lines, page_no, rules=()):
                 lane(n)["splits"][-1]["split"] = v.strip("()")
             elif not label and TIME.match(v):
                 lane(n)["splits"].append({"row": row, "time": v, "split": ""})
+    # A push button time with no official time: the touch pad missed the finish (soft touch or a faulty pad).
+    for ln in r["lanes"].values():
+        ln["faultyTouch"] = not ln["offTime"] and any(ln[k] for k in ("buttonA", "buttonB", "buttonC", "backup"))
     blank = lane(0)
     del r["lanes"][0]
     r["lanes"] = [r["lanes"][k] for k in sorted(r["lanes"]) if {**r["lanes"][k], "lane": 0} != blank]
@@ -192,7 +196,7 @@ def main():
         print(json.dumps(found, indent=1))
         return
     head = ["race", "page", "eventNumber", "heat", "eventDescription", "startTime", "manualStart", "lane", "place",
-            "time", "splits", "offTime", "buttonOverride", "buttonA", "buttonB", "buttonC", "backup", "pbDiff", "pbFlagged", "reaction"]
+            "time", "splits", "offTime", "buttonOverride", "faultyTouch", "buttonA", "buttonB", "buttonC", "backup", "pbDiff", "pbFlagged", "reaction"]
     w = csv.writer(sys.stdout)
     w.writerow(head)
     for r in found:

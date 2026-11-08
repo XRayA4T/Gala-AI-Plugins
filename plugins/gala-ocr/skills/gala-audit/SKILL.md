@@ -114,8 +114,9 @@ A **no-show** on the lane sheet (N/S, no SW times) is recorded as N/S with no ti
 report shows `N/S` as the final time and flags the Gen7 time for correction.
 
 Then it compares the final time with the **Gen7 official time** (noting when that was an underlined push button
-override), and adds the lane sheet's notes and transcription doubts for the line (unreadable, medium or low
-confidence, overwritten times).
+override). A lane where Gen7 has a push button time but no official time is noted as **TP soft touch / faulty
+TP** (the final time still comes from the rules above) and counted in the summary. It then adds the lane sheet's
+notes and transcription doubts for the line (unreadable, medium or low confidence, overwritten times).
 
 **DQs:** each slip is checked against the lane sheet (a swimmer in that heat and lane, and not a no-show), Gen7 (a
 finish in that lane) and the event (an IM infraction in a non-IM event, a distance longer than the race), and for
@@ -126,6 +127,7 @@ as a missing slip. Each slip's DQ code (from `dq-codes.json`) is checked against
 
 Give the user the file path and the headline numbers from the report's summary: swims, how many finals came from
 TP and from the SW median, bad TP and bad PB times, official times that differ from the final time beyond the
-tolerance (and the largest), swims with lane sheet times but no Gen7 time (by lane, if one lane stands out), DQ
+tolerance (and the largest), swims with lane sheet times but no Gen7 time and TP soft touch / faulty TP lanes (by
+lane, if one lane stands out), DQ
 slips with serious findings, codes you assigned with a note, and missing lane sheets. Don't paste swimmers' names into chat; refer to swims by
 event, heat and lane.

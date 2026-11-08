@@ -48,7 +48,7 @@ A list of races in report order:
   "lanes": [
     {"lane": 3, "place": 6, "time": "3:28.23",
      "splits": [{"row": 1, "time": "1:40.74", "split": ""}, {"row": 2, "time": "3:28.23", "split": "1:47.49"}],
-     "offTime": "3:28.23", "buttonOverride": false, "buttonA": "3:24.36", "buttonB": "", "buttonC": "",
+     "offTime": "3:28.23", "buttonOverride": false, "faultyTouch": false, "buttonA": "3:24.36", "buttonB": "", "buttonC": "",
      "backup": "3:24.36", "pbDiff": "3.87", "pbFlagged": true, "reaction": ""}
   ]
 }
@@ -59,6 +59,9 @@ A list of races in report order:
 - `buttonOverride` is true when the Off. Time is underlined: the official time came from the push buttons, overriding
   the touch pad (usually a missed or soft touch; P:B Diff is 0.00). The lane may have no finish split, or Gen7 may
   copy the button time into it: a finish split equal to the Off. Time of an override lane is not a pad touch.
+- `faultyTouch` is true when the lane has a push button time (Button A/B/C or Backup) but no Off. Time: read it as
+  a **touch pad soft touch or faulty touch pad** (TP soft touch / faulty TP). Gen7 has no official time for the
+  swim, so the result has to come from the buttons or the watches.
 - `splits` are the lane's split rows top to bottom; `row` is the grid row (one per 100 m, or one for a 50), so a
   missing split leaves a gap, and the race's last row is the finish: a lane's touch pad finish time is its split on
   that row. `split` is the bracketed value under a cumulative time, `""` when none is printed.
@@ -71,7 +74,8 @@ Tell the user how many races and lanes were read and where the output went, then
 
 - heats with more than one race (and which race numbers), and any race number missing from the sequence
 - manual starts
-- lanes with `buttonOverride` (how many, and per race), lanes with `pbFlagged`, and a lane with a place but no time
+- lanes with `buttonOverride` (how many, and per race), lanes with `faultyTouch` as "TP soft touch / faulty TP"
+  (how many, and by lane: several races in the same lane point to a pad that isn't recording), lanes with `pbFlagged`, and a lane with a place but no time
   (or the reverse)
 - a lane whose Off. Time matches neither its final pad split nor its buttons, without an underline: it may have been
   typed in by hand

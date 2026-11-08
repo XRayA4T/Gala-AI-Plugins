@@ -196,6 +196,8 @@ class Audit:
                 # Gen7 may copy the override into the finish split; a finish split equal to it is no pad touch.
                 if tp is not None and tp == official:
                     tp = None
+            if gl.get("faultyTouch"):
+                note("TP soft touch / faulty TP: Gen7 has a PB time but no official time", "warn")
         sw = []
         if row:
             for t in row["handTimes"]:
@@ -638,6 +640,7 @@ def build(audit, tol, scans):
         ("Gen7 official time differs from the final time within the tolerance",
          count(lambda r: r["diff"] is not None and 0 < abs(r["diff"]) <= tol)),
         ("Gen7 official time is a push button override", count(lambda r: has(r, "(underlined)"))),
+        ("TP soft touch / faulty TP (Gen7 PB time but no official time)", count(lambda r: has(r, "faulty TP"))),
         ("Gen7 time for a no-show on the lane sheet (recorded as N/S, no time)",
          count(lambda r: has(r, "recorded as N/S"))),
         ("Gen7 time for a lane the sheet has as empty, or a no-show with SW times",
