@@ -1,6 +1,6 @@
 ---
 name: gala-audit
-description: Build a gala audit report (one HTML page) from gala-ocr transcriptions (lane sheets, DQ slips, ETD programme) and the Colorado Gen7 session report - a full result review listing every swim by event, heat and lane with the touch pad (TP), push button (PB) and lane sheet stopwatch (SW) times, the final time worked out from them, the Gen7 official time and audit notes (bad TP, bad PB, poor SW times), plus touch pad touches by lane (expected and recorded split and finish touches), DQ slip checks (missing or incorrect DQs) and lane sheet findings. Use when asked to audit a gala's results, review or reconcile times, work out final times from pads, buttons and watches, or check DQs, once the scans are transcribed.
+description: Build a gala audit report (one HTML page) from gala-ocr transcriptions (lane sheets, DQ slips, ETD programme) and the Colorado Gen7 session report - a full result review listing every swim by event, heat and lane with the touch pad (TP), push button (PB) and lane sheet stopwatch (SW) times, the final time worked out from them, the Gen7 official time and audit notes (bad TP, bad PB, poor SW times), a Quick Fix list of the swims the OCR could not settle, plus touch pad touches by lane (expected and recorded split and finish touches), DQ slip checks (missing or incorrect DQs) and lane sheet findings. Use when asked to audit a gala's results, review or reconcile times, work out final times from pads, buttons and watches, or check DQs, once the scans are transcribed, and for a final audit of the manual changes made in Meet Manager.
 ---
 
 # Gala audit report
@@ -45,8 +45,12 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> "<gen7 report>.pdf" "<out>.html" [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"]
 ```
+
+Once the merge results file is written (below), run the audit again with `--merge` so the Quick Fix section checks it
+and shows what it has for each swim; `--quick-fixes` also writes the Quick Fix list on its own, to print (no
+swimmers' names), and as JSON next to it (same name, `.json`) for the final audit.
 
 Every section, and each event in the full result review, starts collapsed. A **Paper** column links each swim to
 its lane sheet and DQ slips; the DQ and lane sheet tables link back to the swims. Following a link opens the
@@ -92,6 +96,41 @@ template's with today's date. Name the output like Meet Manager's (`Merge Meet R
 Report what the script prints (swims it moved to the lane sheet's swimmer, swims with no time, lane sheet swimmers
 with no entry) and how the file differs from the Meet Manager results it replaces. The file holds swimmers' dates of
 birth and registration numbers: keep it in the user's project, and delete any temp copies.
+
+## Quick Fix
+
+A section near the top of the report (and the `--quick-fixes` page) lists **only the swims where the OCR could not
+settle the result**, by event, heat and lane, with what the merge file has and what to check, so they can be fixed
+quickly in Meet Manager once the merge results are imported:
+
+- a watch time that could not be read;
+- a watch read with medium or low confidence, or overwritten on the sheet, that no other watch agrees with, when the
+  final time comes from the watches;
+- a poor watch time, a watch far from the final time, and a swim in doubt;
+- a lane sheet swimmer with no time anywhere, or a Gen7 time for a lane the sheet has as empty or a no-show;
+- a swimmer written in over the printed one (the lane sheet notes say the printed name is crossed out);
+- a DQ slip with no code, or with a code given with a doubt (a `note` in `dq-codes.json`), and a DQ marked on a
+  sheet with no slip;
+- with `--merge`: a lane sheet swim missing from the merge file (left out or with no entry), a different swimmer in
+  the merge file than on the sheet, and a DQ in it with no code.
+
+Everything else stays in its own section: Gen7 differences in Serious issues and SW overrides, the other DQ codes in
+DQs. Keep it short; it is a to-do list, not a second copy of the report.
+
+## Final audit
+
+After the results are imported and finalised in Meet Manager, the user uploads Meet Manager's merge results export.
+Compare it with our merge results file for the same events:
+
+```
+python3 -I $SKILL/scripts/final_audit.py "<our merge results>.hy3" "<final merge results>.hy3" "<out>.html" [--quick-fixes "<quick fix>.json"] [--codes DQ_CODES.txt]
+```
+
+It matches every entry by swimmer and event and lists each manual change: time changed, DQ added, removed or code
+changed, no-show added or removed, moved to another heat or lane, result added (including a swimmer with no entry in
+ours) or removed, with our value, the final value and whether the swim was on the Quick Fix list; then a summary by
+kind, and the Quick Fix swims left as they were. Places, backup and pad times are not compared. The page has
+swimmers' names; report back by event, heat and lane.
 
 ## What it works out
 
@@ -143,5 +182,5 @@ TP and from the SW median, bad TP and bad PB times, official times that differ f
 tolerance (and the largest), swims with lane sheet times but no Gen7 time and TP soft touch / faulty TP lanes (by
 lane, if one lane stands out), DQ
 slips with serious findings, codes you assigned with a note, missing lane sheets, and from the Touchpads table the
-total split and finish touches recorded against expected, with any lane well under 100%, and the ignored races (false starts and races not started) by race number. Don't paste swimmers' names into chat; refer to swims by
+total split and finish touches recorded against expected, with any lane well under 100%, and the ignored races (false starts and races not started) by race number, and how many swims are on the Quick Fix list (by kind). Don't paste swimmers' names into chat; refer to swims by
 event, heat and lane.

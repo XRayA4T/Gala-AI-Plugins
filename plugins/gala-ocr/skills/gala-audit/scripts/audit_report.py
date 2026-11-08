@@ -2,7 +2,8 @@
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
 Usage: audit_report.py OCR_DIR GEN7_REPORT.pdf OUT.html [--tolerance 0.30] [--codes DQ_CODES.txt]
-                       [--scans DIR] [--scan-dpi 90] [--scan-quality 40]
+                       [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
+                       [--quick-fixes QUICK_FIXES.html]
 
 OCR_DIR holds the gala-ocr files: lane sheets (<scan>-eventEE-laneL-pPPP.json), DQ slips
 (<scan>-eventEE-heatH-laneL-pPPP.json) and ETD programme pages (<scan>-pPPP.json). The ETD race numbers link each
@@ -23,6 +24,13 @@ a finish touch).
 Ignored races, listed under the summary and not flagged anywhere else: a false start (a Gen7 race with nothing recorded
 in any lane whose race number is not in the ETD programme) and a race not started (an ETD race number with no Gen7
 race and no lane sheet times).
+Quick Fix: only the swims whose result rests on something the OCR could not settle (unreadable watches; watches
+read with low confidence or overwritten when the final time comes from them; poor watch times, swims in doubt, lane
+sheet and Gen7 disagreeing on whether a lane swam, swimmers written in; DQ slips with no code or a code given with a
+doubt), so they can be fixed quickly in Meet Manager once the merge results are imported. With --merge (our merge
+results file) it also lists lane sheet swims missing from it or given to another swimmer, and DQs in it with no code,
+and shows what the file has for each swim. --quick-fixes writes the list on its own (HTML to print, no swimmers'
+names) and as JSON next to it, for final_audit.py.
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
 DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
 Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
@@ -49,7 +57,9 @@ from collections import defaultdict
 from datetime import datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "gen7-report" / "scripts"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gen7_report  # noqa: E402
+import hy3  # noqa: E402
 
 LANE_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
 SLIP_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-heat(?P<heat>\d+)-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
@@ -694,7 +704,123 @@ def touchpad_table(lanes):
             + f'<tr><td><b>Total</b></td>{cells(total)}</tr></table></div>')
 
 
-def build(audit, tol, scans):
+WRITTEN_IN = re.compile(r"\bname\b.*crossed out.*\bwritten\b")
+
+
+def surname_key(name):
+    return re.sub(r"[^a-z]", "", (name or "").split(",")[0].lower())
+
+
+def quick_fixes(audit, allres, slip_rows, missing, merge=None):
+    """The swims whose result rests on something the OCR could not settle, by (event, heat, lane): what the merge
+    file has, and what to check. A watch that could not be read; a watch read with medium or low confidence, or
+    overwritten on the sheet, that no other watch agrees with, when the final time comes from the watches; a poor or stray watch time; a swim in
+    doubt; a lane sheet swimmer with no time anywhere, or a Gen7 time for a lane the sheet has as empty or a no-show;
+    a swimmer written in over the printed one; a DQ slip with no code, or with a code given with a doubt (a note in
+    dq-codes.json), and a DQ marked on a sheet with no slip; and, given our merge file (by_swim from hy3), a lane sheet swim not in it, a different
+    swimmer there, or a DQ with no code."""
+    fixes = defaultdict(list)
+    for r in allres:
+        key = (r["event"], r["heat"], r["lane"])
+        from_sw = r["final"] is not None and (r["final"] != r["tp"] or r["swDoubt"])
+        for col, v, t in r["sw"] if from_sw else []:
+            # An uncertain reading matters only when no other watch backs it up.
+            if (t["confidence"] != "HIGH" or t["corrected"]) and not any(
+                    c != col and abs(o - v) <= audit.tol for c, o, _ in r["sw"]):
+                why = (f'read as {fmt(v)} ({t["confidence"].lower()} confidence)' if t["confidence"] != "HIGH"
+                       else f"{fmt(v)}, overwritten on the sheet")
+                fixes[key].append(f'SW timer {col} "{t["written"]}" {why}, and no other watch agrees with it: '
+                                  f'the final time comes from the watches; check the reading')
+        for _, n in r["notes"]:
+            if "could not be read" in n:
+                fixes[key].append(f"{n}: read the watch on the sheet")
+            elif n.startswith(("Poor SW time", "In doubt")) or n.endswith("check the sheet") \
+                    or "no time anywhere" in n or "but the lane sheet has a no-show" in n \
+                    or "but the lane sheet has no swimmer" in n:
+                fixes[key].append(n)
+        row = r["row"]
+        if row and row["status"] != "NO_SHOW" and WRITTEN_IN.search(row["notes"] or ""):
+            fixes[key].append("A swimmer is written in over the printed one: check the entry the swim is given to")
+    for s, row, f in slip_rows:
+        key = (s["eventNumber"], s["heat"], s["lane"])
+        given = audit.assigned.get(s["_file"], {})
+        code = given.get("code", "")
+        if code and given.get("note"):
+            # Only a code picked with a doubt; the others are in the DQs section.
+            text = audit.codes.get(code, ("not in the code list", ""))[0]
+            fixes[key].append(f"DQ {code} ({text}): confirm the code with the referee; {given['note']}")
+        elif not code:
+            fixes[key].append("DQ slip with no code: enter the code in Meet Manager")
+        for lv, t in f:
+            if lv == "serious" and ("lane sheet" in t or "Not signed" in t):
+                fixes[key].append(f"DQ slip: {t}")
+    for e, h, ln, _ in missing:
+        fixes[(e, h, ln)].append("DQ marked on the lane sheet but there is no slip")
+    if merge is not None:
+        for (e, ln), sheet in audit.sheets.items():
+            for h, row in enumerate(sheet["rows"], start=1):
+                if row["status"] not in ("SWAM", "DISQUALIFIED") or not row["handTimes"]:
+                    continue
+                m = merge.get((e, h, ln))
+                if m is None:
+                    fixes[(e, h, ln)].append("Swam on the lane sheet but not in the merge file: enter the swim")
+                elif surname_key(row["swimmerName"]) != surname_key(m["surname"]):
+                    fixes[(e, h, ln)].append("The lane sheet swimmer is not the one in the merge file: check the swimmer")
+        for key, m in merge.items():
+            if m["status"] == "Q" and not m["code"]:
+                fixes[key].append("DQ in the merge file with no code: enter the code in Meet Manager")
+    by_key = {(r["event"], r["heat"], r["lane"]): r for r in allres}
+    out = []
+    for key in sorted(fixes):
+        checks = list(dict.fromkeys(fixes[key]))
+        r = by_key.get(key)
+        if merge is not None:
+            m = merge.get(key)
+            has = ("not in the file" if m is None else "N/S" if m["status"] == "R"
+                   else f'DQ {hy3.fina(m["code"], audit.codes) or "(no code)"}, {fmt(m["time"])}' if m["status"] == "Q"
+                   else fmt(m["time"]))
+        else:
+            has = ("N/S" if r and r["ns"] else fmt(r["final"]) if r and r["final"] is not None else "no time")
+        out.append({"event": key[0], "heat": key[1], "lane": key[2], "inFile": has, "checks": checks})
+    return out
+
+
+def quick_fix_table(items, done=False):
+    """The Quick Fix table: event, heat, lane, what the merge file has, what to check. In the report (not done) the
+    event links to the swim; the list on its own has a Done box instead."""
+    def ev(i):
+        return str(i["event"]) if done else f'<a href="#{swim_id(i["event"], i["heat"], i["lane"])}">{i["event"]}</a>'
+    if not items:
+        return '<p class="muted">None.</p>'
+    return ('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>In the merge file</th>'
+            '<th>Check</th>' + ('<th>Done</th>' if done else '') + '</tr>' + "".join(
+                f'<tr><td>{ev(i)}</td><td>{i["heat"]}</td><td>{i["lane"]}</td><td class="t">{esc(i["inFile"])}</td>'
+                f'<td><ul class="findings">{"".join(f"<li>{esc(c)}</li>" for c in i["checks"])}</ul></td>'
+                + ('<td class="box">&#9744;</td>' if done else '') + '</tr>' for i in items) + '</table></div>')
+
+
+QUICK_FIX_NOTE = ('Only the swims where the OCR could not settle the result, for a quick fix in Meet Manager once the '
+                  'merge results are imported: watches that could not be read, or were read with low confidence or '
+                  'overwritten with no other watch to back them up, when the final time comes from the watches; poor '
+                  'watch times and swims in doubt; lane sheet and Gen7 disagreeing on whether a lane swam; swimmers '
+                  'written in; DQs with no code or a code given with a doubt; and lane sheet swims missing from the '
+                  'merge file or given to another swimmer. Everything else stays in its own section (Gen7 differences '
+                  'in Serious issues and SW overrides, the other DQ codes in DQs).')
+
+
+def quick_fix_page(meet, items, events):
+    """The Quick Fix list on its own, to print: no swimmers' names."""
+    span = f"events {events[0]}&ndash;{events[-1]}" if len(events) > 1 else f"event {events[0]}"
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>Quick Fix</title>'
+            f'<style>{CSS} td.box {{ font-size:18px; text-align:center; }}</style></head><body>'
+            f'<h1>Quick Fix: {esc(meet["meetName"])} ({span})</h1>'
+            f'<p class="muted">{esc(meet["meetDate"])}. Generated {datetime.now():%Y-%m-%d %H:%M}. '
+            f'{len(items)} swim{"s" if len(items) != 1 else ""}. {QUICK_FIX_NOTE}</p>'
+            + quick_fix_table(items, done=True) + '</body></html>')
+
+
+def build(audit, tol, scans, merge=None):
     results = audit.results()
     slip_rows, missing = audit.dq_findings(results)
     allres = [r for rs in results.values() for r in rs]
@@ -704,6 +830,7 @@ def build(audit, tol, scans):
     has = lambda r, s: any(s in n for _, n in r["notes"])  # noqa: E731
     coded = sum(1 for s in audit.slips if audit.assigned.get(s["_file"], {}).get("code"))
     ignored = audit.ignored_races()
+    fixes = quick_fixes(audit, allres, slip_rows, missing, merge)
     summary = [
         ("Swims with a final time", len(swims)),
         ("Final time from the touch pad", count(lambda r: r["final"] is not None and r["final"] == r["tp"])),
@@ -734,6 +861,7 @@ def build(audit, tol, scans):
         ("DQ marked on a lane sheet with no slip", len(missing)),
         ("Lane sheets not signed", sum(1 for s in audit.sheets.values() if not s["signed"])),
         ("Ignored races (false starts and races not started)", len(ignored)),
+        ("Quick Fix: swims the OCR could not settle", len(fixes)),
     ]
     serious = [r for r in allres if r["serious"]]
     pads, no_race = touchpads(allres)
@@ -746,7 +874,7 @@ def build(audit, tol, scans):
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<div class="bar"><button data-all="open" hidden>Expand all</button><button data-all="close" hidden>Collapse all</button>'
-           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#touchpads">Touchpads</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
+           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#quickfix">Quick Fix</a><a href="#touchpads">Touchpads</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
            '<a href="#dq">DQs</a><a href="#results">Full result review</a><a href="#sheets">Lane sheets</a></div>',
            '<p class="muted">Sections start collapsed. In the results, <b>Paper</b> links each swim to its lane sheet '
            'and DQ slips; event, heat and lane links lead back to the swim, and page numbers open the scan.</p>',
@@ -776,6 +904,9 @@ def build(audit, tol, scans):
                       + "".join(f'<tr><td>{n}</td><td>{esc(f"{e} {d}".strip() if e in audit.events or not d else d)}</td>'
                                 f'<td>{h}</td><td>{why}</td></tr>'
                                 for n, e, h, d, why in ignored) + "</table>" if ignored else "")),
+           section("quickfix", "Quick Fix", f'<p class="muted">{QUICK_FIX_NOTE}'
+                   + ('' if merge is not None else ' Run with --merge to check the merge file too.') + '</p>'
+                   + quick_fix_table(fixes), f' <span class="badge {"bad" if fixes else "ok"}">{len(fixes)} swims</span>'),
            section("touchpads", "Touchpads",
                    '<p class="muted">Touch pad touches Gen7 recorded, by lane, against those expected for every swim '
                    'with a final time. Gen7 prints one split row per 100 m, at the touch pad end: a race of 200 m or '
@@ -867,7 +998,7 @@ def build(audit, tol, scans):
                        f' <span class="badge minor">{len(audit.sheets)} sheets</span>'
                        + (f' <span class="badge bad">{unsigned} not signed</span>' if unsigned else "")))
     out.append(f"<script>{JS}</script></body></html>")
-    return "\n".join(out)
+    return "\n".join(out), fixes
 
 
 def main():
@@ -884,8 +1015,16 @@ def main():
     opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default  # noqa: E731
     scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
     audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned)
-    pathlib.Path(args[2]).write_text(build(audit, tol, scans), encoding="utf-8")
-    print(f"Wrote {args[2]}")
+    merge = hy3.by_swim(args[args.index("--merge") + 1]) if "--merge" in args else None
+    page, fixes = build(audit, tol, scans, merge)
+    pathlib.Path(args[2]).write_text(page, encoding="utf-8")
+    print(f"Wrote {args[2]}: {len(fixes)} swims in Quick Fix")
+    if "--quick-fixes" in args:
+        out = pathlib.Path(args[args.index("--quick-fixes") + 1])
+        meet = next(iter(audit.sheets.values()))
+        out.write_text(quick_fix_page(meet, fixes, sorted(audit.events)), encoding="utf-8")
+        out.with_suffix(".json").write_text(json.dumps(fixes, indent=1), encoding="utf-8")
+        print(f"Wrote {out} and {out.with_suffix('.json')}")
 
 
 if __name__ == "__main__":
