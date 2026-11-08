@@ -108,7 +108,10 @@ and the places are worked out with them. Don't edit the file; pass it as it is.
 An entry can also fix the lane sheet itself: `"watches": {"2": {"accepted": true}}` accepts a medium or low confidence
 reading of timer 2 as read, `"watches": {"2": {"time": "1:05.42"}}` replaces it with the time read off the sheet by
 hand, and `"swimmer": {"name": "Surname, First", "id": "..."}` is the entered swimmer chosen for a written-in name.
-Pass the same file to `audit_report.py --fixes` too, so the report and its Quick Fix list use the fixed readings.
+Pass the same file to `audit_report.py --fixes` too, so the report and its Quick Fix list use the fixed readings. With `"add": true` next to
+`"swimmer"` (a swim confirmed by hand, e.g. for "swam on the lane sheet but not in the merge file"), merge_results
+gives the swim at that event, heat and lane to that swimmer's entry, and adds an entry from the entries file's
+swimmer when they weren't entered in the event.
 
 Every entry gets its team, swimmer and entry lines copied from the entries file (each event marked done, as Meet
 Manager marks an event whose results are final, not seeded or scored), then its result: the final time,

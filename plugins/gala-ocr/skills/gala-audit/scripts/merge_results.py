@@ -190,6 +190,49 @@ def main():
             problems.append(f"E{o['event']} H{o['heat']} L{o['lane']}: the lane sheet has a different swimmer from "
                             f"the one seeded; the swim is given to the lane sheet's swimmer (also entered in the "
                             f"event), and the seeded swimmer has no result")
+    # Swims confirmed by hand for a swimmer ("swimmer": {"id"}, "add": true in --fixes): the swim at that event, heat
+    # and lane is that swimmer's. Their entry in the event takes it; with no entry, one is added (their C1 and D1, and
+    # an E1 made from another entry in the event with their ID and no seed time).
+    for k, f in sorted((ar.json.loads(pathlib.Path(opt("--fixes", None)).read_text(encoding="utf-8")) if opt("--fixes", None) else {}).items()):
+        m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
+        sw = f.get("swimmer") if isinstance(f, dict) else None
+        if not m or not isinstance(sw, dict) or not sw.get("id") or not f.get("add"):
+            continue
+        e, h, ln = (int(x) for x in m.groups())
+        if events and e not in events:
+            continue
+        who = f"E{e} H{h} L{ln}"
+        sid = sw["id"].strip()
+        mine = next((o for o in swims if o["event"] == e and o["e1"][2:8].strip() == sid), None)
+        there = next((o for o in swims if (o["event"], o["heat"], o["lane"]) == (e, h, ln)), None)
+        if mine is not None and mine is there:
+            continue
+        if there is not None:
+            there["heat"] = there["lane"] = 0
+            problems.append(f"{who}: the swim was confirmed for {sw.get('name') or sid}; the entry seeded there has no result")
+        if mine is None:
+            c1 = d1 = own = c1_cur = None
+            for line in ent:
+                if line.startswith("C1"):
+                    c1_cur = line
+                elif line.startswith("D1"):
+                    if line[2:8].strip() == sid:
+                        c1, d1 = c1_cur, line
+                elif line.startswith("E1") and line[2:8].strip() == sid and own is None:
+                    own = line
+            tpl_e1 = next((o["e1"] for o in swims if o["event"] == e), None)
+            if not d1 or not tpl_e1:
+                problems.append(f"{who}: {sw.get('name') or sid} is not in the entries file; enter the swim in Meet Manager")
+                continue
+            e1 = tpl_e1[:2] + (own[2:15] if own else (d1[2:8] + d1[8:13].ljust(5) + "XX")) + tpl_e1[15:]
+            e1 = put(put(e1, 42, "    0,00"), 51, "    0,00")
+            mine = {"c1": c1, "d1": d1, "e1": e1, "event": e, "heat": 0, "lane": 0, "age": int(d1[96:99] or 0),
+                    "time": 0, "status": "", "problems": []}
+            swims.append(mine)
+            problems.append(f"{who}: {sw.get('name') or sid} had no entry in event {e}; an entry was added for the "
+                            f"confirmed swim (check it in Meet Manager after the import)")
+        mine["heat"], mine["lane"] = h, ln
+
     for s in swims:
         if not s["heat"]:
             continue
@@ -262,7 +305,7 @@ def main():
                     s["status"] = ""
                     s.pop("dq", None)
             applied += 1
-        print(f"Applied {applied} fix{'es' if applied != 1 else ''} from {opt('--fixes', None)}")
+        print(f"Applied {applied} result fix{'es' if applied != 1 else ''} (time, no-show, DQ) from {opt('--fixes', None)}")
 
     def group(s):
         return next((i for i, (lo, hi) in enumerate(groups) if lo <= s["age"] <= hi), -1)
