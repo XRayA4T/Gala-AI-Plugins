@@ -30,8 +30,9 @@ from datetime import datetime
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import audit_report as ar  # noqa: E402
 
-# Hy-Tek numbers the strokes; a FINA code's group gives the number, its last letter the rest.
-STROKE_NO = {"free": "1", "back": "2", "breast": "3", "fly": "4", "IM": "5", "Relay": "6"}
+# Hy-Tek numbers the strokes; a FINA code's group gives the number, its last letter the rest. Misc (GA false start,
+# GK did not finish) is 7, as in Meet Manager's own reserved 7P/7Q; no Meet Manager export with one has been seen.
+STROKE_NO = {"free": "1", "back": "2", "breast": "3", "fly": "4", "IM": "5", "Relay": "6", "Misc": "7"}
 
 
 def read(path):

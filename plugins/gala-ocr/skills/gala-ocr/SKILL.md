@@ -63,8 +63,9 @@ For each page not yet done:
 2. **Take the printed fields from the original print when there is one.**
    `python3 -I $SKILL/scripts/original_sheets.py <original>.pdf EVENT LANE` prints that sheet's `meetName`,
    `meetDate`, `eventDescription` and each row's `swimmerName`, `age`, `classification`, `team`, `seedTime` in the
-   exact formats below. Copy them verbatim (row count and heats too). With no original, or none matching, transcribe
-   the printed text from the scan in the same formats.
+   exact formats below. Copy them verbatim (row count and heats too). It reads the age from a mixed event's
+   sex-and-age (`W10` is age `10`), a team pushed against the age by a long name, and a team and seed time wrapped onto
+   the next line. With no original, or none matching, transcribe the printed text from the scan in the same formats.
 3. **Read the handwriting, zooming in on anything unclear.** At 300 dpi a landscape A5 sheet is about 2480 x 1700
    px, and the timer columns and Soft Touch box are in its right ~45%. Crop with pdftoppm, e.g.
    `pdftoppm -r 300 -png -f P -l P -x 1400 -y 350 -W 1080 -H 700 "<scan>.pdf" <tmp>/zoom` (shift `-y`, shrink `-H`

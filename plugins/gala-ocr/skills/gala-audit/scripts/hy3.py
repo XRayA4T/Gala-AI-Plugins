@@ -7,8 +7,9 @@ lane in 23-26; D1 the surname in 8-28 and the first name in 28-48; C1 the team c
 """
 import re
 
-# Hy-Tek numbers the strokes; a FINA code's group gives the number, its last letter the rest.
-STROKE_NO = {"free": "1", "back": "2", "breast": "3", "fly": "4", "IM": "5", "Relay": "6"}
+# Hy-Tek numbers the strokes; a FINA code's group gives the number, its last letter the rest. Misc (GA false start,
+# GK did not finish) is 7, as in Meet Manager's own reserved 7P/7Q; no Meet Manager export with one has been seen.
+STROKE_NO = {"free": "1", "back": "2", "breast": "3", "fly": "4", "IM": "5", "Relay": "6", "Misc": "7"}
 
 
 def lines(path):

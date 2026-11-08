@@ -86,7 +86,8 @@ otherwise the Gen7 buttons, as Meet Manager writes them for a pad time; when TP 
 no PB time, the SW median, thousandths dropped, as backup 1; when TP agrees with the SW median but not PB, PB as
 backup 1 and the SW median as backup 2), places in the heat and
 in the swimmer's age group (`--age-groups`, default `10U,11,12,13,14,15,16,17O`), DQs with their code in Hy-Tek's
-form (stroke number and letter: BaG is `2G`, BfG `4G`, IMB `5B`; Meet Manager stores and exports codes this way,
+form (stroke number and letter: BaG is `2G`, BfG `4G`, IMB `5B`, a Misc code such as GA (false start) `7A`, which
+hasn't yet been checked against a Meet Manager export, so check it after the import; Meet Manager stores and exports codes this way,
 even one entered as BfG, and shows them in the FINA style), no-shows, and the Gen7 splits. Every event is marked
 done, and done-event details follow Meet Manager's own export (the course and a `0` in column 100 on every result,
 no pad time when the pad touch is less than half the final time); for one event this was checked line for line
