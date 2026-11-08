@@ -20,6 +20,9 @@ A no-show on the lane sheet with no SW times is recorded as N/S with no time, ev
 Touchpads: by lane, the split and finish touches Gen7 recorded on the pads against those expected (a race of 200 m or
 more expects one split touch per 100 m before the finish, a shorter race none; every swim with a final time expects
 a finish touch).
+Ignored races, listed under the summary and not flagged anywhere else: a false start (a Gen7 race with nothing recorded
+in any lane whose race number is not in the ETD programme) and a race not started (an ETD race number with no Gen7
+race and no lane sheet times).
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
 DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
 Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
@@ -334,6 +337,28 @@ class Audit:
         if not h or h["raceNumber"] is None:
             return []
         return [k for k, g in self.etd.items() if g["raceNumber"] == h["raceNumber"] and k != (event, heat)]
+
+    def ignored_races(self):
+        """Races left out of the audit: (race, event, heat, description, reason), by race number.
+
+        A false start is a Gen7 race with nothing recorded in any lane (no pad or button time) whose race number is
+        not written in the ETD programme (only checked when there is one). A race not started is an ETD race number
+        with no Gen7 race and no lane sheet time in that heat."""
+        written = {h["raceNumber"] for h in self.etd.values() if h["raceNumber"] is not None}
+        out = []
+        if written:
+            for n, r in self.races.items():
+                if n not in written and not any(
+                        ln["offTime"] or ln["splits"] or ln["backup"] or ln["buttonA"] or ln["buttonB"] or ln["buttonC"]
+                        for ln in r["lanes"]):
+                    out.append((n, r["eventNumber"], r["heat"], r["eventDescription"], "false start"))
+        for (e, h), g in self.etd.items():
+            n = g["raceNumber"]
+            if n is not None and n not in self.races and not any(
+                    h <= len(s["rows"]) and s["rows"][h - 1]["handTimes"]
+                    for (ev, _), s in self.sheets.items() if ev == e):
+                out.append((n, e, h, self.events.get(e, ""), "race not started"))
+        return sorted(out)
 
     def swimmer_in(self, event, heat, lane):
         sheet = self.sheets.get((event, lane))
@@ -678,6 +703,7 @@ def build(audit, tol, scans):
     count = lambda pred: sum(1 for r in allres if pred(r))  # noqa: E731
     has = lambda r, s: any(s in n for _, n in r["notes"])  # noqa: E731
     coded = sum(1 for s in audit.slips if audit.assigned.get(s["_file"], {}).get("code"))
+    ignored = audit.ignored_races()
     summary = [
         ("Swims with a final time", len(swims)),
         ("Final time from the touch pad", count(lambda r: r["final"] is not None and r["final"] == r["tp"])),
@@ -707,6 +733,7 @@ def build(audit, tol, scans):
         ("DQ slips with no DQ code", len(audit.slips) - coded),
         ("DQ marked on a lane sheet with no slip", len(missing)),
         ("Lane sheets not signed", sum(1 for s in audit.sheets.values() if not s["signed"])),
+        ("Ignored races (false starts and races not started)", len(ignored)),
     ]
     serious = [r for r in allres if r["serious"]]
     pads, no_race = touchpads(allres)
@@ -741,7 +768,14 @@ def build(audit, tol, scans):
            '<li>The final time is compared with the Gen7 official time (<sup>PB</sup>: Gen7 used a push button '
            'time).</li></ul>'),
            section("summary", "Summary", '<table><tr><th>Check</th><th>Count</th></tr>'
-                   + "".join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k, v in summary) + "</table>"),
+                   + "".join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k, v in summary) + "</table>"
+                   + ('<h3>Ignored races</h3><p class="muted">Left out of the audit. A false start is a Gen7 race with '
+                      'nothing recorded in any lane whose race number is not written in the ETD programme; a race not '
+                      'started is an ETD race number with no Gen7 race and no lane sheet times.</p><table><tr>'
+                      '<th>Race</th><th>Event</th><th>Heat</th><th>Reason</th></tr>'
+                      + "".join(f'<tr><td>{n}</td><td>{esc(f"{e} {d}".strip() if e in audit.events or not d else d)}</td>'
+                                f'<td>{h}</td><td>{why}</td></tr>'
+                                for n, e, h, d, why in ignored) + "</table>" if ignored else "")),
            section("touchpads", "Touchpads",
                    '<p class="muted">Touch pad touches Gen7 recorded, by lane, against those expected for every swim '
                    'with a final time. Gen7 prints one split row per 100 m, at the touch pad end: a race of 200 m or '

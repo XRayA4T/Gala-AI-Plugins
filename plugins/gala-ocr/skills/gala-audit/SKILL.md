@@ -126,6 +126,11 @@ touch. A push button time, or an underlined button override Gen7 copied into the
 far under 100% points to a dead or faulty pad. A swimmer who stopped before the finish still counts as expecting
 every touch.
 
+**Ignored races**, listed under the summary and not flagged anywhere else:
+- a **false start**: a Gen7 race with nothing recorded in any lane (no pad or button time) whose race number is
+  not written in the ETD programme (checked only when there are ETD pages);
+- a **race not started**: an ETD race number with no Gen7 race and no lane sheet times in that heat.
+
 **DQs:** each slip is checked against the lane sheet (a swimmer in that heat and lane, and not a no-show), Gen7 (a
 finish in that lane) and the event (an IM infraction in a non-IM event, a distance longer than the race), and for
 duplicates, missing signatures, announcement time and initial. A DQ marked on a lane sheet with no slip is listed
@@ -138,5 +143,5 @@ TP and from the SW median, bad TP and bad PB times, official times that differ f
 tolerance (and the largest), swims with lane sheet times but no Gen7 time and TP soft touch / faulty TP lanes (by
 lane, if one lane stands out), DQ
 slips with serious findings, codes you assigned with a note, missing lane sheets, and from the Touchpads table the
-total split and finish touches recorded against expected, with any lane well under 100%. Don't paste swimmers' names into chat; refer to swims by
+total split and finish touches recorded against expected, with any lane well under 100%, and the ignored races (false starts and races not started) by race number. Don't paste swimmers' names into chat; refer to swims by
 event, heat and lane.

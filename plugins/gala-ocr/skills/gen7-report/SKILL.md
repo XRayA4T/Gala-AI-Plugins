@@ -67,12 +67,16 @@ A list of races in report order:
   that row. `split` is the bracketed value under a cumulative time, `""` when none is printed.
 - A heat started twice (a false start, a recall) has two races with the same event and heat; events swum together
   as one race appear under one event only. Don't merge or drop races: report them as they are.
+- A race with nothing recorded in any lane (no Off. Time, split or button time) whose race number is not written in
+  the ETD programme is a **false start** and can be ignored; an ETD race number with no race in the report and no
+  lane sheet times is a **race not started**. gala-audit lists both under "Ignored races".
 
 ## Report
 
 Tell the user how many races and lanes were read and where the output went, then point out, briefly:
 
 - heats with more than one race (and which race numbers), and any race number missing from the sequence
+- races with nothing recorded in any lane (false starts, when their number is not in the ETD programme)
 - manual starts
 - lanes with `buttonOverride` (how many, and per race), lanes with `faultyTouch` as "TP soft touch / faulty TP"
   (how many, and by lane: several races in the same lane point to a pad that isn't recording), lanes with `pbFlagged`, and a lane with a place but no time
