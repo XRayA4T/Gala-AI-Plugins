@@ -1,6 +1,6 @@
 ---
 name: gala-audit
-description: Build a gala audit report (one HTML page) from gala-ocr transcriptions (lane sheets, DQ slips, ETD programme) and the Colorado Gen7 session report - a full result review listing every swim by event, heat and lane with the touch pad (TP), push button (PB) and lane sheet stopwatch (SW) times, the final time worked out from them, the Gen7 official time and audit notes (bad TP, bad PB, poor SW times), plus DQ slip checks (missing or incorrect DQs) and lane sheet findings. Use when asked to audit a gala's results, review or reconcile times, work out final times from pads, buttons and watches, or check DQs, once the scans are transcribed.
+description: Build a gala audit report (one HTML page) from gala-ocr transcriptions (lane sheets, DQ slips, ETD programme) and the Colorado Gen7 session report - a full result review listing every swim by event, heat and lane with the touch pad (TP), push button (PB) and lane sheet stopwatch (SW) times, the final time worked out from them, the Gen7 official time and audit notes (bad TP, bad PB, poor SW times), plus touch pad touches by lane (expected and recorded split and finish touches), DQ slip checks (missing or incorrect DQs) and lane sheet findings. Use when asked to audit a gala's results, review or reconcile times, work out final times from pads, buttons and watches, or check DQs, once the scans are transcribed.
 ---
 
 # Gala audit report
@@ -118,6 +118,14 @@ override). A lane where Gen7 has a push button time but no official time is note
 TP** (the final time still comes from the rules above) and counted in the summary. It then adds the lane sheet's
 notes and transcription doubts for the line (unreadable, medium or low confidence, overwritten times).
 
+**Touchpads:** a table by lane (and a total) of the touch pad touches Gen7 recorded against those expected, for
+every swim with a final time in a heat with a Gen7 race. Gen7 prints one split row per 100 m, at the touch pad end,
+and the finish on the race's last row, so a race of 200 m or more expects a split touch at each 100 m before the
+finish (D / 100 - 1: a 200 one, a 400 three, a 1500 fourteen) and a shorter race none; every swim expects a finish
+touch. A push button time, or an underlined button override Gen7 copied into the finish, is not a touch. A lane
+far under 100% points to a dead or faulty pad. A swimmer who stopped before the finish still counts as expecting
+every touch.
+
 **DQs:** each slip is checked against the lane sheet (a swimmer in that heat and lane, and not a no-show), Gen7 (a
 finish in that lane) and the event (an IM infraction in a non-IM event, a distance longer than the race), and for
 duplicates, missing signatures, announcement time and initial. A DQ marked on a lane sheet with no slip is listed
@@ -129,5 +137,6 @@ Give the user the file path and the headline numbers from the report's summary: 
 TP and from the SW median, bad TP and bad PB times, official times that differ from the final time beyond the
 tolerance (and the largest), swims with lane sheet times but no Gen7 time and TP soft touch / faulty TP lanes (by
 lane, if one lane stands out), DQ
-slips with serious findings, codes you assigned with a note, and missing lane sheets. Don't paste swimmers' names into chat; refer to swims by
+slips with serious findings, codes you assigned with a note, missing lane sheets, and from the Touchpads table the
+total split and finish touches recorded against expected, with any lane well under 100%. Don't paste swimmers' names into chat; refer to swims by
 event, heat and lane.

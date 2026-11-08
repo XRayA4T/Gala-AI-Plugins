@@ -17,6 +17,9 @@ For every event, heat and lane the report lists the touch pad (TP) time, the pus
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
 A no-show on the lane sheet with no SW times is recorded as N/S with no time, even when Gen7 has one.
+Touchpads: by lane, the split and finish touches Gen7 recorded on the pads against those expected (a race of 200 m or
+more expects one split touch per 100 m before the finish, a shorter race none; every swim with a final time expects
+a finish touch).
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
 DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
 Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
@@ -616,6 +619,56 @@ def code_cell(audit, slip):
     return f'<b>{esc(code)}</b> <span class="muted">{esc(text)}</span>{note}'
 
 
+def touchpads(results):
+    """Touch pad touches by lane: expected and recorded split and finish touches.
+
+    Gen7 prints one split row per 100 m, at the touch pad end, and the finish on the race's last row: a race of
+    200 m or more expects one split touch per 100 m before the finish (D / 100 - 1), a shorter race none. Only swims
+    with a final time in a heat with a Gen7 race count; a split or finish touch is one Gen7 recorded on the pad
+    (a button time, or an underlined button override copied into the finish, is not one).
+    """
+    lanes = defaultdict(lambda: [0, 0, 0, 0, 0])  # swims, expected splits, splits, expected finishes, finishes
+    no_race = 0
+    for r in results:
+        if r["final"] is None:
+            continue
+        race = r["race"]
+        if not race:
+            no_race += 1
+            continue
+        dist = distance(race["eventDescription"]) or 0
+        last = max([max(dist // 100, 1)] + [s["row"] for ln in race["lanes"] for s in ln["splits"]])
+        gl = next((ln for ln in race["lanes"] if ln["lane"] == r["lane"]), None)
+        row = lanes[r["lane"]]
+        row[0] += 1
+        row[1] += dist // 100 - 1 if dist >= 200 else 0
+        row[2] += len({s["row"] for s in gl["splits"] if s["row"] < last and s["time"]}) if gl and dist >= 200 else 0
+        row[3] += 1
+        row[4] += r["tp"] is not None
+    return dict(sorted(lanes.items())), no_race
+
+
+def touchpad_table(lanes):
+    """The Touchpads table: one row per lane and a total."""
+    def pct(got, want):
+        return f'{round(100 * got / want)}%' if want else ""
+
+    def cls(got, want):
+        return "" if not want or got >= want else (" bad" if got < 0.8 * want else " medium")
+
+    def cells(v):
+        return (f'<td class="t">{v[0]}</td><td class="t">{v[1] or ""}</td><td class="t{cls(v[2], v[1])}">'
+                f'{v[2] if v[1] else ""}</td><td class="t{cls(v[2], v[1])}">{pct(v[2], v[1])}</td>'
+                f'<td class="t">{v[3]}</td><td class="t{cls(v[4], v[3])}">{v[4]}</td>'
+                f'<td class="t{cls(v[4], v[3])}">{pct(v[4], v[3])}</td>')
+
+    total = [sum(v[i] for v in lanes.values()) for i in range(5)]
+    return ('<div class="wrap"><table><tr><th>Lane</th><th>Swims</th><th>Expected split touches</th>'
+            '<th>Actual split touches</th><th>%</th><th>Expected finish touches</th><th>Actual finish touches</th>'
+            '<th>%</th></tr>' + "".join(f"<tr><td>{ln}</td>{cells(v)}</tr>" for ln, v in lanes.items())
+            + f'<tr><td><b>Total</b></td>{cells(total)}</tr></table></div>')
+
+
 def build(audit, tol, scans):
     results = audit.results()
     slip_rows, missing = audit.dq_findings(results)
@@ -656,6 +709,7 @@ def build(audit, tol, scans):
         ("Lane sheets not signed", sum(1 for s in audit.sheets.values() if not s["signed"])),
     ]
     serious = [r for r in allres if r["serious"]]
+    pads, no_race = touchpads(allres)
     out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
            f'<title>{esc(meet["meetName"])} Audit</title><style>{CSS}</style></head><body>',
@@ -665,7 +719,7 @@ def build(audit, tol, scans):
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<div class="bar"><button data-all="open" hidden>Expand all</button><button data-all="close" hidden>Collapse all</button>'
-           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
+           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#touchpads">Touchpads</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
            '<a href="#dq">DQs</a><a href="#results">Full result review</a><a href="#sheets">Lane sheets</a></div>',
            '<p class="muted">Sections start collapsed. In the results, <b>Paper</b> links each swim to its lane sheet '
            'and DQ slips; event, heat and lane links lead back to the swim, and page numbers open the scan.</p>',
@@ -688,6 +742,17 @@ def build(audit, tol, scans):
            'time).</li></ul>'),
            section("summary", "Summary", '<table><tr><th>Check</th><th>Count</th></tr>'
                    + "".join(f"<tr><td>{esc(k)}</td><td>{v}</td></tr>" for k, v in summary) + "</table>"),
+           section("touchpads", "Touchpads",
+                   '<p class="muted">Touch pad touches Gen7 recorded, by lane, against those expected for every swim '
+                   'with a final time. Gen7 prints one split row per 100 m, at the touch pad end: a race of 200 m or '
+                   'more expects a split touch at each 100 m before the finish (a 200 one, a 400 three, a 1500 '
+                   'fourteen), a shorter race none. Every swim expects a finish touch. A push button time, or an '
+                   'underlined button override, is not a touch. Orange: under 80% recorded; yellow: 80% or more but '
+                   'not all.</p>' + touchpad_table(pads)
+                   + ('<p class="muted">A swimmer who stopped before the finish (a DNF) still counts as expecting every '
+                      'touch; check DQ slips that say a swimmer stopped.</p>')
+                   + (f'<p class="muted">Not counted: {no_race} swim{"s" if no_race != 1 else ""} in a heat with no '
+                      f'Gen7 race.</p>' if no_race else "")),
            section("serious", "Serious issues",
                    f'<p class="muted">Select an event number to go to the swim in the full result review.</p>'
                    f'<div class="wrap"><table>{HEAD.format(lead="<th>Event</th>")}'
