@@ -2,7 +2,7 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3 OUT.hy3 [--events 1-12] [--fixes FIXES.json] [--tolerance 0.30]
+Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--fixes FIXES.json] [--tolerance 0.30]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
 --fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
@@ -16,7 +16,8 @@ give that session's entries export, merge results export and Gen7 folder; --even
 ENTRIES.hy3 is Meet Manager's meet entries export (the Hfile in "Meet Entries-<meet>.zip"): every swimmer (D1), team
 (C1) and entry (E1), with the heat and lane each was seeded in (E2). An export made before seeding (no E2 lines) works
 too: each entry is then seeded from the lane sheet it is printed on (same event, matched by name). RESULTS.hy3 is a merge results file Meet Manager
-exported for the same meet: its header (A1, B1, B2) is copied, with today's date and time in A1, and its result lines
+exported for the same meet, or "-" to need only ENTRIES.hy3 (its B1 and B2, with an A1 that says Merge Meet
+Results and Meet Manager's result line layout): its header (A1, B1, B2) is copied, with today's date and time in A1, and its result lines
 show the layout written here. Every entry gets its C1, D1 and E1 line copied from ENTRIES.hy3 (the E1 with its event marked done, "A" in column
 32, where MM writes 1 for seeded and S for scored), then:
 - E2: the final time; the pad (TP) time; up to three backup times: the lane sheet (SW) times when the final time comes
@@ -127,12 +128,24 @@ def main():
     events = ar.parse_events(opt("--events", None))
     audit = ar.Audit(sheets, slips, etd, ar.gen7_report.races(gen7), tol, codes, assigned, events)
 
-    tpl = read(template)
-    base = next(ln for ln in tpl if ln.startswith("E2") and ln[12] == " " and ln[11] == "L")
+    # RESULTS may be "-" (or the entries export itself): the header and the result line's layout are then made from
+    # the entries export, so Meet Manager's merge results export isn't needed.
+    tpl = read(entries if template == "-" else template)
+    base = next((ln for ln in tpl if ln.startswith("E2") and ln[12] == " " and ln[11] == "L"), None)
     # An entry with no result: no time, no status and heat 0 (a done event's export has the course on it too).
     unseeded = next((ln for ln in tpl if ln.startswith("E2") and ln[3:11].strip() == "0,00" and ln[12] == " "
-                     and not ln[20:23].strip("0 ")), None)
-    meet_date = base[87:95]
+                     and not ln[20:23].strip("0 ")), None) if base else None
+    if base:
+        meet_date = base[87:95]
+    else:
+        # No result line to copy (the entries export, or a merge results export made before any event was swum):
+        # the A1 says Merge Meet Results, B1 and B2 are the meet's as they are, and the result line is Meet
+        # Manager's layout (every field written below is set for each swim), dated with the meet's start (B1).
+        tpl = [put(tpl[0], 2, "04Merge Meet Results     ")] + tpl[1:3]
+        meet_date = tpl[1][92:100]
+        base = put(put(put(put(" " * 128, 0, "E2F"), 3, tm(0) + "    "), 15, "    0  0  0  0   0  0"), 36,
+                   tm(0) + tm(0) + tm(0) + "  0" + tm(0, 10) + "     0,00     " + meet_date)
+        base = put(put(base, 99, "0"), 122, "0")
 
     # The entries file: C1 (team), D1 (swimmer), E1 (entry) and the E2 with the seeded heat and lane.
     swims, c1, d1 = [], None, None
@@ -326,7 +339,15 @@ def main():
         # E1 column 32 is the event's status in Meet Manager: 1 seeded, S scored, A done. Every event is done.
         lines += [out_line(s["c1"]), out_line(s["d1"]), out_line(put(s["e1"], 31, "A"))]
         # In a done event Meet Manager writes the course on every result, and a 0 in column 100.
-        if not s["heat"]:
+        # An entry scratched in Meet Manager (E1 column 80 "Y") that didn't swim gets no result, as Meet Manager has
+        # it, not a no-show; one that swam keeps its result (the audit lists it to check the scratch).
+        scratched = s["e1"][79:80] == "Y"
+        if scratched and s["heat"] and s["status"] == "R":
+            problems.append(f"E{s['event']} H{s['heat']} L{s['lane']}: scratched in the entries and didn't swim; "
+                            f"written with no result")
+        elif scratched and s["heat"] and s["time"]:
+            problems.append(f"E{s['event']} H{s['heat']} L{s['lane']}: scratched in the entries but swam; result kept")
+        if not s["heat"] or (scratched and s["status"] == "R"):
             e2 = unseeded
             if not e2:
                 e2 = put(put(put(base, 3, tm(0)), 12, "   "), 20, f"{0:3d}{0:3d}{0:3d}{0:4d}")
@@ -372,9 +393,11 @@ def main():
         lines += [out_line(g) for g in split_lines(res, s["event"], audit, s["status"] == "R")]
 
     pathlib.Path(out).write_bytes(("\r\n".join(lines) + "\r\n").encode("latin-1"))
-    counts = {k: sum(1 for s in swims if (s["status"] if s["heat"] else "-") == k) for k in ("", "Q", "R", "-")}
+    def shown(s):   # a scratched entry that didn't swim is written with no result, like one not seeded
+        return "-" if not s["heat"] or (s["e1"][79:80] == "Y" and s["status"] == "R") else s["status"]
+    counts = {k: sum(1 for s in swims if shown(s) == k) for k in ("", "Q", "R", "-")}
     print(f"Wrote {out}: {len(swims)} entries, {counts['']} with a time, {counts['Q']} DQ, {counts['R']} no-show, "
-          f"{counts['-']} not seeded")
+          f"{counts['-']} with no result (not seeded, or scratched and not swum)")
     for p in problems:
         print(p)
 

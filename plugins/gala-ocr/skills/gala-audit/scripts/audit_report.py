@@ -846,6 +846,8 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                     fixes[(e, h, ln)].append("The lane sheet swimmer is not the one in the merge file: check the swimmer")
                     on_sheet.add((e, h, ln))
         for key, m in merge.items():
+            if m.get("scratched") and m["time"]:
+                fixes[key].append("Scratched in Meet Manager but swam (a time in the merge file): check the scratch")
             if m["status"] == "Q" and not m["code"]:
                 fixes[key].append("DQ in the merge file with no code: enter the code in Meet Manager")
                 if key in slip_of and slip_of[key] not in slips[key]:

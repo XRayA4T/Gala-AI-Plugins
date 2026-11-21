@@ -90,16 +90,21 @@ the user hasn't asked for.
 
 To load the audited results into Hy-Tek Meet Manager, write a merge results file (.hy3) from the same data, the
 meet's entries export (the `Hfile*.hy3` inside `Meet Entries-<meet>.zip`; unzip it into a temp folder) and a merge
-results file Meet Manager exported for this meet (its header and layout are copied):
+results file Meet Manager exported for this meet (its header and layout are copied), or `-` to use the entries export
+alone (from 1.6.10: its B1 and B2, an A1 that says Merge Meet Results, and Meet Manager's result line layout):
 
 ```
-python3 -I $SKILL/scripts/merge_results.py <ocr folder> <gen7> <entries>.hy3 "<merge results>.hy3" "<out>.hy3" [--events 1-12]
+python3 -I $SKILL/scripts/merge_results.py <ocr folder> <gen7> <entries>.hy3 "<merge results>.hy3"|- "<out>.hy3" [--events 1-12]
 ```
 
 The entries export can be the one made **before the session was seeded** (no heats or lanes in it, often named
 "pre-gala"): each entry is then seeded from the lane sheet it is printed on, matched by event and name (surname and
 first name, or the surname alone when only that entry has it). The script prints how many it seeded and lists lane
 sheet swimmers it couldn't match.
+
+An entry **scratched** in Meet Manager (the entries export's E1 column 80 is `Y`) that didn't swim (a no-show on the
+lane sheet) is written with **no result**, as Meet Manager has it, not as a no-show. One that swam keeps its result,
+and the audit (given `--merge`) lists it in the Quick Fix list: "Scratched in Meet Manager but swam".
 
 `--fixes FIXES.json` applies fixes made by hand after the audit (the gala audit portal writes them, one per
 quick-fix swim): `{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}`.

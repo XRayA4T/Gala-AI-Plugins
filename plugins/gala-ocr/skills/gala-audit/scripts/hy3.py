@@ -25,7 +25,7 @@ def hundredths(field):
 
 
 def entries(path):
-    """Every entry: {id, event, surname, first, team, heat, lane, time, status, code}. An entry with no heat, or no time
+    """Every entry: {id, event, surname, first, team, heat, lane, time, status, code, scratched}. An entry with no heat, or no time
     and no status, has no result."""
     out, c1, d1 = [], "", ""
     for ln in lines(path):
@@ -37,7 +37,7 @@ def entries(path):
         elif tag == "E1":
             out.append({"id": ln[2:8].strip(), "event": int(ln[38:42]), "surname": d1[8:28].strip(),
                         "first": d1[48:68].strip() or d1[28:48].strip(), "legalFirst": d1[28:48].strip(), "team": c1[2:7].strip(), "heat": 0, "lane": 0, "time": 0,
-                        "status": "", "code": ""})
+                        "status": "", "code": "", "scratched": ln[79:80] == "Y"})
         elif tag == "E2" and out:
             e = out[-1]
             heat, lane = ln[20:23].strip(), ln[23:26].strip()
