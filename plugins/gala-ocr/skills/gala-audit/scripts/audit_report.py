@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--fixes FIXES.json] [--times TIMES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -70,6 +70,12 @@ LANE_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-lane(?P<lane>\d+)-
 SLIP_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-heat(?P<heat>\d+)-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
 ETD_NAME = re.compile(r"^(?P<scan>.+)-p(?P<page>\d{3,})\.json$")
 DQ_CODES = pathlib.Path(__file__).resolve().parents[1] / "data" / "dqcodesFINA.txt"
+# Events timed by hand only (no Gen7 race, e.g. a time trial): --hand-times 12,13. Their swims are timed from the
+# lane sheet watches and the missing Gen7 race is not a problem.
+HAND_EVENTS = set()
+# Heats timed in another heat's Gen7 race ("timedIn": "8-1" on a swim in --fixes, e.g. a time trial swum in event 8
+# heat 1's race): {(event, heat, lane): (event, heat)}, for that swim only.
+RACE_OF = {}
 STROKES = {"butterfly": "fly", "backstroke": "back", "breaststroke": "breast", "freestyle": "free"}
 TIME = re.compile(r"^(?:(\d{1,2}):)?(\d{1,2})\.(\d{2})$")
 
@@ -148,6 +154,10 @@ def apply_hand_fixes(sheets, path):
         if not m or not isinstance(f, dict):
             continue
         e, h, ln = (int(x) for x in m.groups())
+        ti = re.fullmatch(r"\s*(\d+)-(\d+)\s*", str(f.get("timedIn") or ""))
+        if ti:   # this heat was swum in another event's heat: take that heat's Gen7 race
+            RACE_OF[(e, h, ln)] = (int(ti.group(1)), int(ti.group(2)))
+            n += 1
         sheet = sheets.get((e, ln))
         if not sheet or h > len(sheet["rows"]):
             continue
@@ -168,6 +178,9 @@ def apply_hand_fixes(sheets, path):
             elif w.get("accepted") and t is not None and t.get("normalized"):
                 t["confidence"] = "HIGH"
                 n += 1
+        if str(f.get("swimsEvent") or "").isdigit():   # the swim counts for the swimmer's entry in another event
+            row["swimsEvent"] = int(f["swimsEvent"])
+            n += 1
         sw = f.get("swimmer")
         if isinstance(sw, dict) and sw.get("name"):
             row["swimmerName"] = sw["name"]
@@ -241,6 +254,8 @@ class Audit:
 
     def race_for(self, event, heat):
         """The Gen7 race of a programme heat, and how it was found."""
+        if event in HAND_EVENTS:
+            return None, "hand times only"
         h = self.etd.get((event, heat))
         if h is not None:
             if h["raceNumber"] is None:
@@ -254,7 +269,12 @@ class Audit:
         """Every number the review needs for one swim, the final time and the notes."""
         sheet = self.sheets.get((event, lane))
         row = sheet["rows"][heat - 1] if sheet and heat <= len(sheet["rows"]) else None
-        race, race_note = self.race_for(event, heat)
+        if (event, heat, lane) in RACE_OF:   # swum in another heat's race
+            e2, h2 = RACE_OF[(event, heat, lane)]
+            race, race_note = self.race_for(e2, h2)
+            race_note += f", timed in event {e2} heat {h2}"
+        else:
+            race, race_note = self.race_for(event, heat)
         gl = next((ln for ln in race["lanes"] if ln["lane"] == lane), None) if race else None
         res = {"event": event, "heat": heat, "lane": lane, "row": row, "race": race, "raceNote": race_note,
                "notes": [], "serious": False, "warn": False}
@@ -389,7 +409,9 @@ class Audit:
                  + ("a no-show" if status == "NO_SHOW" else "no swimmer"), "serious")
         if status == "SWAM" and row and row["swimmerName"] and official is None and final is None:
             note("Lane sheet has a swimmer but there is no time anywhere", "warn")
-        if status == "SWAM" and race is None and sw:
+        if status == "SWAM" and race is None and sw and race_note == "hand times only":
+            note("Hand times only (no Gen7 race for this event): the final time is from the watches")
+        elif status == "SWAM" and race is None and sw:
             note(f"Lane sheet has times but there is no Gen7 race for this heat ({race_note})", "serious")
         elif status == "SWAM" and race is not None and official is None and sw:
             note(f"Gen7 has no time in this lane (race {race['race']}) but the lane sheet has times", "serious")
@@ -838,7 +860,7 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
             for h, row in enumerate(sheet["rows"], start=1):
                 if row["status"] not in ("SWAM", "DISQUALIFIED") or not row["handTimes"]:
                     continue
-                m = merge.get((e, h, ln))
+                m = merge.get((e, h, ln)) or merge.get((row.get("swimsEvent") or e, h, ln))
                 if m is None:
                     fixes[(e, h, ln)].append("Swam on the lane sheet but not in the merge file: enter the swim")
                     on_sheet.add((e, h, ln))
@@ -1146,6 +1168,8 @@ def main():
     opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default  # noqa: E731
     scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
     events = parse_events(args[args.index("--events") + 1]) if "--events" in args else None
+    if "--hand-times" in args:
+        HAND_EVENTS.update(parse_events(args[args.index("--hand-times") + 1]) or [])
     audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned, events)
     if not audit.sheets:
         sys.exit("No lane sheets" + (" for events %s" % args[args.index("--events") + 1] if events else "")

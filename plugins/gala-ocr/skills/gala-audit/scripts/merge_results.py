@@ -2,7 +2,7 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--fixes FIXES.json] [--tolerance 0.30]
+Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--hand-times 12] [--fixes FIXES.json] [--tolerance 0.30]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
 --fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
@@ -126,6 +126,7 @@ def main():
     given = pathlib.Path(ocr) / "dq-codes.json"
     assigned = ar.json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
     events = ar.parse_events(opt("--events", None))
+    ar.HAND_EVENTS.update(ar.parse_events(opt("--hand-times", None)) or [])
     audit = ar.Audit(sheets, slips, etd, ar.gen7_report.races(gen7), tol, codes, assigned, events)
 
     # RESULTS may be "-" (or the entries export itself): the header and the result line's layout are then made from
@@ -162,6 +163,7 @@ def main():
             swims.append({"c1": c1, "d1": d1, "e1": ln, "event": int(ln[38:42]), "heat": heat, "lane": lane,
                           "age": int(d1[96:99]), "time": 0, "status": "", "problems": []})
 
+    all_swims = swims
     if events:
         swims = [s for s in swims if s["event"] in events]
 
@@ -252,10 +254,38 @@ def main():
         mine["heat"], mine["lane"] = h, ln
         problems = [p for p in problems if not (p.startswith(who + " ") and "couldn't be seeded" in p)]
 
+    # A swim that counts for another event ("swimsEvent": N in --fixes, e.g. a swimmer swimming their 200 breast in
+    # the 200 free's heat): the swimmer's entry in event N takes the swim (its heat and lane, timed in that race),
+    # and their entry in the race's own event has no result. It is written with the race's event.
+    for k, f in sorted((ar.json.loads(pathlib.Path(opt("--fixes", None)).read_text(encoding="utf-8")) if opt("--fixes", None) else {}).items()):
+        m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
+        if not m or not isinstance(f, dict) or not str(f.get("swimsEvent") or "").isdigit():
+            continue
+        e, h, ln = (int(x) for x in m.groups())
+        other = int(f["swimsEvent"])
+        if events and e not in events and other not in events:
+            continue
+        src = next((s for s in all_swims if (s["event"], s["heat"], s["lane"]) == (e, h, ln)), None)
+        who_id = (f.get("swimmer") or {}).get("id") if isinstance(f.get("swimmer"), dict) else None
+        sid = src["d1"][2:8] if src else None
+        target = next((s for s in all_swims if s["event"] == other
+                       and (s["d1"][2:8] == sid or (who_id and s["d1"][2:8].replace(" ", "") == who_id.replace(" ", "")))), None)
+        who = f"E{e} H{h} L{ln}"
+        if not target:
+            problems.append(f"{who}: counts for event {other}, but the swimmer has no entry in event {other}; not moved")
+            continue
+        if src and src is not target:
+            src["heat"], src["lane"] = 0, 0
+        target["heat"], target["lane"], target["src"] = h, ln, (e, h, ln)
+        if target not in swims:
+            swims.append(target)
+        problems.append(f"{who}: swum for event {other} (the swimmer's entry there takes it); "
+                        f"their event {e} entry has no result")
+
     for s in swims:
         if not s["heat"]:
             continue
-        key = (s["event"], s["heat"], s["lane"])
+        key = s.get("src") or (s["event"], s["heat"], s["lane"])
         used.add(key)
         res = audit.lane_result(*key)
         row = res["row"]

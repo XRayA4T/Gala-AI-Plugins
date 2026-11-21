@@ -106,6 +106,13 @@ An entry **scratched** in Meet Manager (the entries export's E1 column 80 is `Y`
 lane sheet) is written with **no result**, as Meet Manager has it, not as a no-show. One that swam keeps its result,
 and the audit (given `--merge`) lists it in the Quick Fix list: "Scratched in Meet Manager but swam".
 
+`--hand-times 12` (both scripts) marks events timed by hand only, such as a time trial with no Gen7 race: their swims
+are timed from the lane sheet watches and the missing race isn't a problem. A fix with `"swimsEvent": N` on a swim
+(`"E-H-L"` in `--fixes`) gives the swim to the swimmer's entry in event N, timed in that race; their entry in the race's
+own event has no result.
+A fix with `"timedIn": "8-1"` on a swim times it in event 8 heat 1's Gen7 race (the same lane), for a swim such as a time
+trial swum in another event's heat.
+
 `--fixes FIXES.json` applies fixes made by hand after the audit (the gala audit portal writes them, one per
 quick-fix swim): `{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}`.
 They override the audited time and status of those swims (a no-show, a DQ with its FINA code, or a corrected time),
@@ -168,8 +175,12 @@ After the results are imported and finalised in Meet Manager, the user uploads M
 Compare it with our merge results file for the same events:
 
 ```
-python3 -I $SKILL/scripts/final_audit.py "<our merge results>.hy3" "<final merge results>.hy3" "<out>.html" [--quick-fixes "<quick fix>.json"] [--codes DQ_CODES.txt]
+python3 -I $SKILL/scripts/final_audit.py "<our merge results>.hy3" "<final merge results>.hy3" "<out>.html" [--quick-fixes "<quick fix>.json"] [--codes DQ_CODES.txt] [--results "<results>.pdf"]
 ```
+
+`--results` takes Meet Manager's printed Results for the session (PDF) and adds a **Results exceptions** section:
+every swim where our merge results, the final export and the printed results don't all agree (time, N/S, DQ, no
+result), matched by event and name.
 
 It matches every entry by swimmer and event and lists each manual change: time changed, DQ added, removed or code
 changed, no-show added or removed, moved to another heat or lane, result added (including a swimmer with no entry in
