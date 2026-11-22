@@ -113,6 +113,14 @@ own event has no result.
 A fix with `"timedIn": "8-1"` on a swim times it in event 8 heat 1's Gen7 race (the same lane), for a swim such as a time
 trial swum in another event's heat.
 
+**Which Gen7 race is a heat.** The ETD programme's race number, when there is one. Without it, the race for the event
+and heat: a race with no times (a false start or a technical problem) is passed over, and when two or more races of
+the heat have times the lane sheets decide: the race whose touch pad or push button times agree with the median of
+the lane's watches (within 1 s) on clearly the most lanes. If they can't tell (no lane sheets yet, or they fit more
+than one race, or none), the latest race is used and every lane of the heat goes to Quick Fix ("Several Gen7 races
+with times for this heat: ... choose the race"). A person's choice is a heat fix in `--fixes`,
+`{"<event>-<heat>": {"race": 51}}`, and wins over the ETD and the lane sheets.
+
 `--fixes FIXES.json` applies fixes made by hand after the audit (the gala audit portal writes them, one per
 quick-fix swim): `{"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": ""}}`.
 They override the audited time and status of those swims (a no-show, a DQ with its FINA code, or a corrected time),

@@ -76,6 +76,7 @@ HAND_EVENTS = set()
 # Heats timed in another heat's Gen7 race ("timedIn": "8-1" on a swim in --fixes, e.g. a time trial swum in event 8
 # heat 1's race): {(event, heat, lane): (event, heat)}, for that swim only.
 RACE_OF = {}
+RACE_PICK = {}   # {(event, heat): race}: the Gen7 race a person chose for a heat (a fix "<event>-<heat>": {"race": N})
 STROKES = {"butterfly": "fly", "backstroke": "back", "breaststroke": "breast", "freestyle": "free"}
 TIME = re.compile(r"^(?:(\d{1,2}):)?(\d{1,2})\.(\d{2})$")
 
@@ -150,6 +151,11 @@ def apply_hand_fixes(sheets, path):
     given = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
     n = 0
     for k, f in given.items():
+        mh = re.fullmatch(r"(\d+)-(\d+)", k)
+        if mh and isinstance(f, dict) and str(f.get("race") or "").isdigit():   # the race chosen for a whole heat
+            RACE_PICK[(int(mh.group(1)), int(mh.group(2)))] = int(f["race"])
+            n += 1
+            continue
         m = re.fullmatch(r"(\d+)-(\d+)-(\d+)", k)
         if not m or not isinstance(f, dict):
             continue
@@ -256,14 +262,66 @@ class Audit:
         """The Gen7 race of a programme heat, and how it was found."""
         if event in HAND_EVENTS:
             return None, "hand times only"
+        if (event, heat) in RACE_PICK:   # chosen by a person: it wins over the ETD and the lane sheets
+            n = RACE_PICK[(event, heat)]
+            return (self.races[n], f"race {n} (chosen in the portal)") if n in self.races else \
+                (None, f"race {n} was chosen in the portal but is not in the Gen7 report")
         h = self.etd.get((event, heat))
         if h is not None:
             if h["raceNumber"] is None:
                 return None, "ETD: no race number" + (f" ({h['notes']})" if h["notes"] else "")
             r = self.races.get(h["raceNumber"])
             return r, (f"race {h['raceNumber']}" if r else f"ETD race {h['raceNumber']} is not in the Gen7 report")
-        finished = [r for r in self.by_heat.get((event, heat), []) if any(ln["offTime"] for ln in r["lanes"])]
+        # A race with no times (a false start or a technical problem) is passed over. When two or more races of the
+        # heat have times, the lane sheets decide which one is this heat; if they can't, the latest is used and
+        # every lane of the heat goes to Quick Fix ("Several Gen7 races ...") for a person to choose.
+        finished = [r for r in self.by_heat.get((event, heat), []) if any(ln["offTime"] or ln["backup"] for ln in r["lanes"])]
+        if len(finished) > 1:
+            return self.pick_race(event, heat, finished)
         return (finished[-1], f"race {finished[-1]['race']} (by event and heat)") if finished else (None, "no Gen7 race")
+
+    def race_match(self, event, heat, race):
+        """How well a race's times fit the lane sheets of a heat: (lanes that agree, lanes that don't). A lane agrees
+        when its touch pad or push button time is within 1 s of the median of the sheet's watches; it disagrees when
+        both are further apart, or one has a swim and the other none (a time on an empty or no-show row, or watch times
+        and no Gen7 time). A lane swum for another event (a "timedIn" fix) is left out."""
+        good = bad = 0
+        gen7 = {ln["lane"]: [v for v in (hundredths(ln["offTime"]), hundredths(ln["backup"])) if v is not None]
+                for ln in race["lanes"]}
+        other = {k[2] for k, v in RACE_OF.items() if v == (event, heat)}
+        lanes = {ln for (e, ln) in self.sheets if e == event} | {ln for ln, t in gen7.items() if t}
+        for lane in sorted(lanes - other):
+            sheet = self.sheets.get((event, lane))
+            row = sheet["rows"][heat - 1] if sheet and heat <= len(sheet["rows"]) else None
+            if row is None:
+                continue
+            sw = median([v for v in (hundredths(t["normalized"]) for t in row["handTimes"]) if v is not None])
+            t = gen7.get(lane) or []
+            if sw is not None and t:
+                good, bad = (good + 1, bad) if min(abs(v - sw) for v in t) <= 100 else (good, bad + 1)
+            elif t and row["status"] in ("NO_SHOW", "NO_SWIMMER"):
+                bad += 1
+            elif sw is not None and not t:
+                bad += 1
+        return good, bad
+
+    def pick_race(self, event, heat, finished):
+        nums = ", ".join(str(r["race"]) for r in finished)
+        # The race whose times agree with the most lanes (a disagreeing lane counts against it twice) is the heat's,
+        # if it is clearly ahead: at least 2 points ahead of the next, and agreeing on more lanes than it disagrees.
+        fits = sorted(((r, *self.race_match(event, heat, r)) for r in finished), key=lambda f: f[1] - 2 * f[2], reverse=True)
+        score = lambda f: f[1] - 2 * f[2]  # noqa: E731
+        best = fits[0]
+        if best[1] > best[2] and score(best) - score(fits[1]) >= 2:
+            r, good, bad = best
+            return r, (f"race {r['race']} (races {nums} have times; the lane sheets match race {r['race']} on {good} "
+                       f"lane{'s' if good != 1 else ''}" + (f", not on {bad}" if bad else "") + ")")
+        r = finished[-1]
+        why = ("the lane sheets aren't transcribed yet" if not any(g or b for _, g, b in fits) else
+               "the lane sheets match more than one" if sum(1 for f in fits if f[1] > f[2]) > 1 else
+               "the lane sheets match none of them")
+        return r, (f"race {r['race']}, the latest (Several Gen7 races with times for this heat: races {nums}; {why}: "
+                   f"choose the race)")
 
     def lane_result(self, event, heat, lane):
         """Every number the review needs for one swim, the final time and the notes."""
@@ -275,6 +333,7 @@ class Audit:
             race_note += f", timed in event {e2} heat {h2}"
         else:
             race, race_note = self.race_for(event, heat)
+        several = "Several Gen7 races" in race_note
         gl = next((ln for ln in race["lanes"] if ln["lane"] == lane), None) if race else None
         res = {"event": event, "heat": heat, "lane": lane, "row": row, "race": race, "raceNote": race_note,
                "notes": [], "serious": False, "warn": False}
@@ -284,6 +343,9 @@ class Audit:
             res["notes"].append((level, text))
             res["serious"] |= level == "serious"
             res["warn"] |= level == "warn"
+
+        if several:
+            note(race_note[race_note.index("Several Gen7 races"):].rstrip(")"), "serious")
 
         # Touch pad: the lane's split on the race's last row; push buttons: the backup time.
         tp = pb = official = None
@@ -827,7 +889,7 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         for _, n in r["notes"]:
             if "could not be read" in n:
                 fixes[key].append(f"{n}: read the watch on the sheet")
-            elif n.startswith(("Poor SW time", "In doubt")) or n.endswith("check the sheet") \
+            elif n.startswith(("Poor SW time", "In doubt", "Several Gen7 races")) or n.endswith("check the sheet") \
                     or "no time anywhere" in n or "but the lane sheet has a no-show" in n \
                     or "but the lane sheet has no swimmer" in n:
                 fixes[key].append(n)
