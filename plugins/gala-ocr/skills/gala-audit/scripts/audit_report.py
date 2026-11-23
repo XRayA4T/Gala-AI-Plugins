@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--dqs DQS.json] [--ocr-fixes [--checks CHECKS.json]] [--tolerance 0.30] [--codes DQ_CODES.txt] [--watches-over-pad]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--dqs DQS.json] [--ocr-fixes [--checks CHECKS.json]] [--confirmations CONFIRMATIONS.json] [--tolerance 0.30] [--codes DQ_CODES.txt] [--watches-over-pad]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -44,6 +44,9 @@ from PB (or more than 1 s from a TP and PB that agree) when they agree with each
 median. --checks writes the other checks that aren't about the reading (several Gen7 races for a heat, the lane sheet and
 Gen7 disagreeing on a lane), for that process to settle; swims by swimmers not entered in the race (a scratched
 entry that swam, an entry added for a confirmed swim) come from merge_results.py --not-entered.
+--confirmations (from the gala audit portal) adds what was done about each Quick OCR fix and a Confirmations section:
+per event, each confirmation section's swims (or DQs, swims not entered, other checks) with what was confirmed, the
+reason and who confirmed it.
 --times writes every swim's times (TP, PB, SW, median, final) with its swimmer and whether it is a no-show or a DQ;
 --dqs writes every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction,
 code and findings.
@@ -93,6 +96,7 @@ HAND_EVENTS = set()
 OCR_FIXES = False
 OTHER_CHECKS = []   # with --ocr-fixes: the swims with checks that aren't about the reading (written by --checks)
 SW_PB_CHECK = 40   # with --ocr-fixes, an SW median further than this (hundredths) from PB is checked on the sheet
+CONFIRMS = {}   # --confirmations: {event: what the portal has for it (Quick OCR fixes done, confirmations made)}
 # Heats timed in another heat's Gen7 race ("timedIn": "8-1" on a swim in --fixes, e.g. a time trial swum in event 8
 # heat 1's race): {(event, heat, lane): (event, heat)}, for that swim only.
 RACE_OF = {}
@@ -631,15 +635,16 @@ class Audit:
 
 
 CSS = """:root { --bg:#fff; --fg:#1d1d1f; --muted:#6e6e73; --line:#d9d9de; --head:#f4f4f6;
-        --medium:#fff3c4; --low:#ffd8a8; --bad:#ffd6d6; --bad-fg:#a50e0e; --ok:#1a7f37; --warn-fg:#8a5a00; }
+        --medium:#fff3c4; --low:#ffd8a8; --bad:#ffd6d6; --bad-fg:#a50e0e; --ok:#1a7f37; --warn-fg:#8a5a00;
+        --pick:#cfe8d6; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg:#161618; --fg:#ececf1; --muted:#9a9aa3; --line:#3a3a40;
           --head:#222226; --medium:#4d4214; --low:#5c3a12; --bad:#5a1d1d; --bad-fg:#ff9b9b; --ok:#5fd17f;
-          --warn-fg:#f2c14e; color-scheme:dark; }
+          --warn-fg:#f2c14e; --pick:#1f4a2c; color-scheme:dark; }
 }
 :root[data-theme="dark"] { --bg:#161618; --fg:#ececf1; --muted:#9a9aa3; --line:#3a3a40; --head:#222226;
         --medium:#4d4214; --low:#5c3a12; --bad:#5a1d1d; --bad-fg:#ff9b9b; --ok:#5fd17f; --warn-fg:#f2c14e;
-        color-scheme:dark; }
+        --pick:#1f4a2c; color-scheme:dark; }
 body { background:var(--bg); color:var(--fg); margin:0 auto; max-width:1280px; padding:24px 16px;
        font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:32px 0 8px; } h3 { font-size:15px; margin:20px 0 6px; }
@@ -668,6 +673,8 @@ details > summary h2, details > summary h3 { display:inline; margin:0; }
 .links a { white-space:nowrap; margin-right:6px; }
 tr.scan > td { padding:0 8px 6px; border-bottom:1px solid var(--line); }
 tr.scan img { display:block; max-width:100%; height:auto; margin:6px 0; border:1px solid var(--line); background:#fff; }
+td.pick { background:var(--pick); font-weight:700; } td.t.big { background:var(--low); }
+.pickbad { color:var(--warn-fg); font-weight:600; }
 tr:target, tr.hit { outline:2px solid var(--warn-fg); outline-offset:-2px; }
 @media print { body { max-width:none; } h2 { break-after:avoid; } tr { break-inside:avoid; } .bar { display:none; } }
 """
@@ -1033,12 +1040,250 @@ def quick_fix_table(items, scans=None, done=False):
         return f'<a href="#{scan_id(x["id"])}" title="{esc(x["scan"])} page {x["page"]}">{text}</a>'
     if not items:
         return '<p class="muted">None.</p>'
+    portal = not done and any(i["event"] in CONFIRMS for i in items)   # what was done about each, from the portal
     return ('<div class="wrap"><table><tr><th>Event</th><th>Heat</th><th>Lane</th><th>In the merge file</th>'
-            '<th>Check</th><th>Scan</th>' + ('<th>Done</th>' if done else '') + '</tr>' + "".join(
+            '<th>Check</th><th>Scan</th>' + ('<th>Done</th>' if done else '') + ('<th>Fixed / ticked</th>' if portal else '')
+            + '</tr>' + "".join(
                 f'<tr><td>{ev(i)}</td><td>{i["heat"]}</td><td>{i["lane"]}</td><td class="t">{esc(i["inFile"])}</td>'
                 f'<td><ul class="findings">{"".join(f"<li>{esc(c)}</li>" for c in i["checks"])}</ul></td>'
                 f'<td class="links">{"<br>".join(scan(x) for x in i.get("scans", []))}</td>'
-                + ('<td class="box">&#9744;</td>' if done else '') + '</tr>' for i in items) + '</table></div>')
+                + ('<td class="box">&#9744;</td>' if done else '') + (quick_fix_done(i) if portal else '') + '</tr>'
+                for i in items) + '</table></div>')
+
+
+def when(t):
+    try:
+        return datetime.fromtimestamp(float(t)).strftime("%Y-%m-%d %H:%M")
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def who(x):
+    """'raymond, 2026-11-23 14:05' for a tick or a decision ({by, at})."""
+    return esc(", ".join(v for v in (str(x.get("by") or ""), when(x.get("at"))) if v)) if x else ""
+
+
+def fix_text(fx):
+    """A fix made in the portal ({watches, swimmer, status, time, note, ...}) in words."""
+    out = []
+    for col, w in sorted((fx.get("watches") or {}).items()):
+        if w.get("time"):
+            out.append(f"SW{col} typed in as {w['time']}")
+        elif w.get("accepted"):
+            out.append(f"SW{col} accepted as read")
+        elif w.get("ignore") or w.get("ignored"):
+            out.append(f"SW{col} left out")
+    if fx.get("swimmer"):
+        sw = fx["swimmer"]
+        out.append("swimmer set to " + str(sw.get("name") if isinstance(sw, dict) else sw))
+    if fx.get("add"):
+        out.append("entry added")
+    if fx.get("timedIn"):
+        out.append("swum in event %s heat %s" % tuple((str(fx["timedIn"]) + "-").split("-")[:2]))
+    if fx.get("swimsEvent"):
+        out.append(f"swims event {fx['swimsEvent']}")
+    if fx.get("status"):
+        out.append({"NS": "no-show", "DQ": "DQ", "SWAM": "swam"}.get(fx["status"], fx["status"])
+                   + (f" {fx['code']}" if fx.get("code") else ""))
+    if fx.get("time"):
+        out.append(f"time {fx['time']}")
+    if fx.get("note"):
+        out.append(f"note: {fx['note']}")
+    return "; ".join(out)
+
+
+def quick_fix_entry(i):
+    """What the portal has for a Quick OCR fix (its tick and the fix made), or {}."""
+    return next((x for x in CONFIRMS.get(i["event"], {}).get("quickFixes", [])
+                 if int(x["heat"]) == int(i["heat"]) and int(x["lane"]) == int(i["lane"])), {})
+
+
+def quick_fix_done(i):
+    q = quick_fix_entry(i)
+    if not q:
+        return '<td class="muted">&ndash;</td>'
+    fx = fix_text(q.get("fix") or {})
+    fby = who(q.get("fix") or {}) if fx else ""
+    tick = (f'<span class="badge ok">ticked</span> {who(q["tick"])}' if q.get("tick")
+            else '<span class="badge bad">not ticked</span>')
+    made = (esc(fx) + (f' <span class="muted">({fby})</span>' if fby else "") + "<br>") if fx else ""
+    return f'<td>{made}{tick}</td>'
+
+
+PICK_NAME = {"tp": "TP", "pb": "PB", "sw": "SW median"}
+
+
+def _delta(a, b):
+    a, b = hundredths(a), hundredths(b)
+    if a is None or b is None:
+        return '<td class="t muted">&ndash;</td>'
+    d = a - b
+    return f'<td class="t{" big" if abs(d) > 30 else ""}">{"+" if d >= 0 else "&minus;"}{abs(d) / 100:.2f}</td>'
+
+
+def _changed(r):
+    """A confirmation that changed something: another value than suggested, a DQ withdrawn or its code changed, a swim
+    marked as no swim, a result changed."""
+    return bool((r.get("pick") and r.get("default") and r["pick"] != r["default"] and not r.get("stale"))
+                or r.get("action") in ("withdraw", "noswim", "change")
+                or (r.get("action") == "confirm" and r.get("newCode") and r["newCode"] != r.get("code")))
+
+
+def _confirm_times(e, sec):
+    """One time section's swims: TP, PB, SW median, the watches, the three differences and what was confirmed."""
+    opts, show = sec.get("options") or [], sec.get("show")
+    rows = []
+    for r in sec["rows"]:
+        pick = (r.get("pick") if not r.get("stale") else None) if opts else show
+        vals = {"tp": r.get("tp") or "", "pb": r.get("pb") or "", "sw": r.get("med") or ""}
+        sw = {int(w[0]): w for w in r.get("sw") or [] if w and w[0]}
+
+        def swc(c):
+            w = sw.get(c)
+            if not w:
+                return '<td></td>'
+            cls = {"MEDIUM": " medium", "LOW": " low"}.get(w[3], "")
+            return f'<td class="t{cls}">{esc(w[1] or (w[2] + "?"))}</td>'
+
+        def tc(k):
+            return f'<td class="t{" pick" if pick == k and vals[k] else ""}">{esc(vals[k])}</td>'
+        if not opts:
+            got = f'{PICK_NAME.get(show, show)} <span class="muted">(section)</span>'
+        elif r.get("stale"):
+            got = '<span class="pickbad">times changed since; to confirm again</span>'
+        elif not pick:
+            got = '<span class="pickbad">not confirmed</span>'
+        else:
+            got = esc(f'{PICK_NAME.get(pick, pick)} {vals.get(pick, "")}')
+            if pick != r.get("default"):
+                got += f' <span class="badge minor">not {esc(PICK_NAME.get(r.get("default"), r.get("default") or ""))}</span>'
+            if r.get("final") and vals.get(pick) and hundredths(vals[pick]) != hundredths(r["final"]):
+                got += f'<br><span class="muted">audit: {esc(r["final"])}</span>'
+        by = ('<span class="muted">suggested</span>' if r.get("auto") else who(r) if opts and r.get("by") else "")
+        sid = swim_id(e, r["h"], r["l"])
+        dq = ' <span class="badge minor">DQ</span>' if r.get("dq") else ""
+        rows.append(f'<tr><td><a href="#{sid}">{r["l"]}</a></td><td><a href="#{sid}">{r["h"]}</a></td>'
+                    f'<td>{esc(r.get("name") or "")}{dq}</td>'
+                    + tc("tp") + tc("pb") + tc("sw") + swc(1) + swc(2) + swc(3)
+                    + _delta(vals["tp"], vals["pb"]) + _delta(vals["tp"], vals["sw"]) + _delta(vals["pb"], vals["sw"])
+                    + f'<td>{got}</td><td>{esc(r.get("reason") or "")}</td><td>{by}</td></tr>')
+    return ('<div class="wrap"><table><tr><th>Lane</th><th>Heat</th><th>Swimmer</th><th>TP</th><th>PB</th>'
+            '<th>SW median</th><th>SW1</th><th>SW2</th><th>SW3</th><th>&Delta;TP/PB</th><th>&Delta;TP/SW</th>'
+            '<th>&Delta;PB/SW</th><th>Confirmed</th><th>Reason</th><th>By</th></tr>' + "".join(rows) + '</table></div>')
+
+
+def _confirm_dqs(e, b):
+    rows = []
+    for r in b["rows"]:
+        sid = swim_id(e, r["h"], r["l"])
+        code = esc(r.get("code") or "") + (f' <span class="muted">{esc(r["codeText"])}</span>' if r.get("codeText") else "")
+        if r.get("stale"):
+            got = '<span class="pickbad">the code changed since; to decide again</span>'
+        elif r.get("action") == "confirm":
+            new = r.get("newCode")
+            got = "Confirmed" + (f' as <b>{esc(new)}</b>' if new and new != r.get("code") else "")
+        elif r.get("action") == "withdraw":
+            got = '<b>Withdrawn</b>'
+        else:
+            got = '<span class="pickbad">not decided</span>'
+        infr = esc(r.get("infraction") or "") + (f'<br><span class="muted">Back: {esc(r["back"])}</span>' if r.get("back") else "")
+        if r.get("source") == "sheet":
+            infr += '<br><span class="muted">(DQ on the lane sheet, no slip)</span>'
+        rows.append(f'<tr><td><a href="#{sid}">{r["h"]}</a></td><td><a href="#{sid}">{r["l"]}</a></td>'
+                    f'<td>{esc(r.get("name") or "")}</td><td>{infr}</td><td>{code}</td><td>{got}</td>'
+                    f'<td>{esc(r.get("reason") or "")}</td><td>{who(r) if r.get("action") else ""}</td></tr>')
+    return ('<div class="wrap"><table><tr><th>Heat</th><th>Lane</th><th>Swimmer</th><th>Infraction</th><th>Code</th>'
+            '<th>Decision</th><th>Reason</th><th>By</th></tr>' + "".join(rows) + '</table></div>')
+
+
+def _confirm_entries(e, b):
+    rows = []
+    for r in b["rows"]:
+        sid = swim_id(e, r["h"], r["l"])
+        got = {"approve": "Referee approves", "noswim": "<b>Marked as no swim</b>"}.get(
+            r.get("action"), '<span class="pickbad">not decided</span>')
+        what = esc(r.get("text") or {"scratched": "Scratched in Meet Manager but swam",
+                                     "added": "Swam with no entry in the event"}.get(r.get("kind"), r.get("kind") or ""))
+        rows.append(f'<tr><td><a href="#{sid}">{r["h"]}</a></td><td><a href="#{sid}">{r["l"]}</a></td>'
+                    f'<td>{esc(r.get("name") or "")}</td><td>{what}</td><td class="t">{esc(r.get("final") or "")}</td>'
+                    f'<td>{got}</td><td>{esc(r.get("reason") or "")}</td><td>{who(r) if r.get("action") else ""}</td></tr>')
+    return ('<div class="wrap"><table><tr><th>Heat</th><th>Lane</th><th>Swimmer</th><th>Not entered</th><th>Time</th>'
+            '<th>Decision</th><th>Reason</th><th>By</th></tr>' + "".join(rows) + '</table></div>')
+
+
+def _confirm_checks(e, b):
+    rows = []
+    for r in b["rows"]:
+        sid = swim_id(e, r["h"], r["l"])
+        if r.get("action") == "keep":
+            got = "Kept as it is"
+        elif r.get("action") == "change":
+            st = {"NS": "no-show", "DQ": "DQ", "SWAM": "swam"}.get(r.get("status"), r.get("status") or "")
+            got = f'<b>Changed</b> to {esc(st)} {esc(r.get("time") or r.get("code") or "")}'
+        else:
+            got = '<span class="pickbad">not decided</span>'
+        checks = "".join(f"<li>{esc(c)}</li>" for c in r.get("checks") or [])
+        rows.append(f'<tr><td><a href="#{sid}">{r["h"]}</a></td><td><a href="#{sid}">{r["l"]}</a></td>'
+                    f'<td>{esc(r.get("name") or "")}</td><td><ul class="findings">{checks}</ul></td><td>{got}</td>'
+                    f'<td>{esc(r.get("reason") or "")}</td><td>{who(r) if r.get("action") else ""}</td></tr>')
+    return ('<div class="wrap"><table><tr><th>Heat</th><th>Lane</th><th>Swimmer</th><th>Check</th>'
+            '<th>Decision</th><th>Reason</th><th>By</th></tr>' + "".join(rows) + '</table></div>')
+
+
+CONFIRM_NOTE = ("The DQs and every swim's time, confirmed in the gala audit portal once the event's Quick OCR fixes were "
+                "done; the event's merge results are written only when all are confirmed. In the time sections the value "
+                "confirmed is highlighted green, and a difference of more than 0.30 s between two of TP, PB and the SW "
+                "median is shaded orange; SW times read with medium (yellow) or low (orange) confidence are shaded. "
+                "<b>Suggested</b>: the section's default, taken without a change; <b>Changed</b>: confirmed with another "
+                "value than suggested, a DQ withdrawn or given another code, a swim marked as no swim. Lane and heat go "
+                "to the swim in the full result review.")
+
+
+def confirmations_html(audit, events):
+    """The Confirmations section: per event, an overview of every confirmation section, then each one's swims."""
+    out = [f'<p class="muted">{CONFIRM_NOTE}</p>']
+    for e in events:
+        c = CONFIRMS.get(e)
+        if not c:
+            out.append(f'<h3>Event {e}</h3><p class="muted">No confirmations from the portal for this event.</p>')
+            continue
+        state = ('<span class="badge ok">all confirmed</span>' if c.get("complete") else
+                 '<span class="badge bad">waiting for the Quick OCR fixes</span>' if not c.get("ready") else
+                 '<span class="badge bad">not all confirmed yet</span>')
+        parts = [(k, t, c.get(k)) for k, t in (("dq", "DQs"), ("entries", "Swims not entered"), ("checks", "Other checks"))]
+        parts += [(sc["key"], sc["title"], sc) for sc in c.get("sections") or []]
+        ov, body = [], []
+        for key, title, b in parts:
+            if b is None:
+                continue
+            n = b.get("count", 0)
+            if not n and key == "nomatch":   # shown only when it has swims
+                continue
+            done = b.get("decided", b.get("confirmed", 0))
+            changed = sum(1 for r in b.get("rows") or [] if _changed(r))
+            tick = (f'<span class="badge ok">&#10003;</span> {who(b["tick"])}' if b.get("tick") and b.get("done") else
+                    '<span class="muted">nothing to confirm</span>' if not n else
+                    '<span class="badge bad">not ticked</span>' if not b.get("tick") else
+                    '<span class="badge bad">changed since it was ticked</span>')
+            name = f'<a href="#cf{e}-{key}">{esc(title)}</a>' if n else esc(title)
+            ov.append(f'<tr><td>{name}</td><td>{n}</td><td>{done if n else ""}</td><td>{changed or ""}</td>'
+                      f'<td>{tick}</td></tr>')
+            if not n:
+                continue
+            table = (_confirm_dqs(e, b) if key == "dq" else _confirm_entries(e, b) if key == "entries"
+                     else _confirm_checks(e, b) if key == "checks" else _confirm_times(e, b))
+            what = f'<p class="muted">{esc(b["what"])}.</p>' if b.get("what") else ""
+            ch = f' <span class="badge minor">{changed} changed</span>' if changed else ""
+            body.append(f'<details class="sheet" id="cf{e}-{key}"><summary><h3>{esc(title)}</h3> '
+                        f'<span class="badge minor">{n}</span>{ch}</summary>{what}{table}</details>')
+        head = ('<div class="wrap"><table><tr><th>Section</th><th>Swims</th><th>Confirmed</th><th>Changed</th>'
+                f'<th>Section ticked</th></tr>{"".join(ov)}</table></div>')
+        if len(events) > 1:
+            out.append(f'<details class="sheet" id="cf{e}"><summary><h3>Event {e} {esc(audit.events.get(e, ""))}</h3> '
+                       f'{state}</summary>{head}{"".join(body)}</details>')
+        else:
+            out.append(f'<p>{state}</p>{head}{"".join(body)}')
+    return "".join(out)
 
 
 QUICK_FIX_NOTE = ('Only the swims where the OCR could not settle the result, for a quick fix in Meet Manager once the '
@@ -1048,6 +1293,13 @@ QUICK_FIX_NOTE = ('Only the swims where the OCR could not settle the result, for
                   'written in; DQs with no code or a code given with a doubt; and lane sheet swims missing from the '
                   'merge file or given to another swimmer. Everything else stays in its own section (Gen7 differences '
                   'in Serious issues and SW overrides, the other DQ codes in DQs).')
+
+
+OCR_FIX_NOTE = ('Only reading problems, to fix and tick in the gala audit portal before the confirmations: watches that '
+                'could not be read, or were read with low confidence or overwritten with no other watch to back them '
+                "up; poor watch times; an SW median more than 0.40 s from PB when the watches don't back each other "
+                'up; swimmers written in, and lane sheet swims missing from the merge file or given to another swimmer. '
+                'Everything else is settled in the Confirmations.')
 
 
 def _runs(evs):
@@ -1117,10 +1369,24 @@ def build(audit, tol, scans, merge=None):
         ("DQ marked on a lane sheet with no slip", len(missing)),
         ("Lane sheets not signed", sum(1 for s in audit.sheets.values() if not s["signed"])),
         ("Ignored races (false starts and races not started)", len(ignored)),
-        ("Quick Fix: swims the OCR could not settle", len(fixes)),
+        (("Quick OCR fixes" if OCR_FIXES else "Quick Fix") + ": swims the OCR could not settle", len(fixes)),
     ]
+    for e in sorted(audit.events) if CONFIRMS else []:
+        rows = [r for sc in (CONFIRMS.get(e) or {}).get("sections") or [] for r in sc.get("rows") or []]
+        summary.append((f"Event {e} confirmations: swims confirmed with another value than suggested",
+                        sum(1 for r in rows if r.get("pick") and r.get("default") and r["pick"] != r["default"]
+                            and not r.get("stale"))))
     serious = [r for r in allres if r["serious"]]
     pads, no_race = touchpads(allres)
+    qf_title = "Quick OCR fixes" if OCR_FIXES else "Quick Fix"
+    qf_ticked = all(quick_fix_entry(i).get("tick") for i in fixes)
+    qf_badge = (f' <span class="badge {"ok" if qf_ticked else "bad"}">{"all ticked" if qf_ticked else "not all ticked"}</span>'
+                if fixes and CONFIRMS else "")
+    cf_evs = sorted(audit.events)
+    cf_done = sum(1 for e in cf_evs if CONFIRMS.get(e, {}).get("complete"))
+    cf_section = ([section("confirmations", "Confirmations", confirmations_html(audit, cf_evs),
+                           f' <span class="badge {"ok" if cf_done == len(cf_evs) else "bad"}">{cf_done} of {len(cf_evs)} '
+                           f'event{"s" if len(cf_evs) != 1 else ""} confirmed</span>')] if CONFIRMS else [])
     # The events the report covers, in the heading when it isn't the whole gala (an audit event by event or of the
     # session so far): "Event 102 Mixed 100 LC Meter Butterfly Finals", or "Events 101-103".
     evs = sorted(audit.events)
@@ -1140,7 +1406,7 @@ def build(audit, tol, scans, merge=None):
            f'the ETD programme ({len(audit.etd)} heats) and the Gen7 session report ({len(audit.races)} races). '
            f'DQ codes: {len(audit.codes)} in the code list, {coded} of {len(audit.slips)} slips given one.</p>',
            '<div class="bar"><button data-all="open" hidden>Expand all</button><button data-all="close" hidden>Collapse all</button>'
-           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#quickfix">Quick Fix</a><a href="#touchpads">Touchpads</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
+           '<a href="#rules">Final time</a><a href="#summary">Summary</a><a href="#quickfix">' + qf_title + '</a>' + ('<a href="#confirmations">Confirmations</a>' if CONFIRMS else '') + '<a href="#touchpads">Touchpads</a><a href="#serious">Serious issues</a><a href="#overrides">SW overrides</a>'
            '<a href="#dq">DQs</a><a href="#results">Full result review</a><a href="#sheets">Lane sheets</a></div>',
            '<p class="muted">Sections start collapsed. In the results, <b>Paper</b> links each swim to its lane sheet '
            'and DQ slips; event, heat and lane links lead back to the swim, and page numbers open the scan.</p>',
@@ -1170,9 +1436,12 @@ def build(audit, tol, scans, merge=None):
                       + "".join(f'<tr><td>{n}</td><td>{esc(f"{e} {d}".strip() if e in audit.events or not d else d)}</td>'
                                 f'<td>{h}</td><td>{why}</td></tr>'
                                 for n, e, h, d, why in ignored) + "</table>" if ignored else "")),
-           section("quickfix", "Quick Fix", f'<p class="muted">{QUICK_FIX_NOTE}'
+           section("quickfix", qf_title, '<p class="muted">' + (OCR_FIX_NOTE if OCR_FIXES else QUICK_FIX_NOTE)
                    + ('' if merge is not None else ' Run with --merge to check the merge file too.') + '</p>'
-                   + quick_fix_table(fixes, scans), f' <span class="badge {"bad" if fixes else "ok"}">{len(fixes)} swims</span>'),
+                   + quick_fix_table(fixes, scans),
+                   f' <span class="badge {"ok" if not fixes else "minor" if qf_badge and qf_ticked else "bad"}">'
+                   f'{len(fixes)} swim{"" if len(fixes) == 1 else "s"}</span>' + qf_badge),
+           *cf_section,
            section("touchpads", "Touchpads",
                    '<p class="muted">Touch pad touches Gen7 recorded, by lane, against those expected for every swim '
                    'with a final time. Gen7 prints one split row per 100 m, at the touch pad end: a race of 200 m or '
@@ -1284,6 +1553,10 @@ def main():
     scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
     events = parse_events(args[args.index("--events") + 1]) if "--events" in args else None
     global WATCHES_OVER_PAD, OCR_FIXES
+    if "--confirmations" in args:   # from the gala audit portal: [{event, quickFixes, sections, dq, ...}]
+        for c in json.loads(pathlib.Path(args[args.index("--confirmations") + 1]).read_text(encoding="utf-8")):
+            if isinstance(c, dict) and c.get("event") is not None:
+                CONFIRMS[int(c["event"])] = c
     WATCHES_OVER_PAD = "--watches-over-pad" in args
     OCR_FIXES = "--ocr-fixes" in args
     if "--hand-times" in args:

@@ -45,7 +45,7 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"] [--ocr-fixes [--checks CHECKS.json]] [--times TIMES.json] [--dqs DQS.json]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"] [--ocr-fixes [--checks CHECKS.json]] [--times TIMES.json] [--dqs DQS.json] [--confirmations CONFIRMATIONS.json]
 ```
 
 `<gen7>` is the Gen7 session report PDF, or a **folder of Gen7's race-by-race PDFs** for one session (one PDF per
@@ -193,6 +193,14 @@ their median: no misread can be moving it. `--checks` (1.6.15) writes the other 
 confirmations to settle. `--times` writes every
 swim's TP, PB, SW times, median and final time with its swimmer and whether it is a no-show or a DQ, and `--dqs`
 every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction, code and findings.
+`--confirmations` (1.6.16) takes what the gala audit portal has for each event (a JSON list, one object per event:
+its Quick OCR fixes with who ticked them and the fix made, and its confirmations: DQs, swims not entered, other checks
+and each time section's swims with the value confirmed, the reason and who confirmed it). The report then calls the
+list **Quick OCR fixes** (with `--ocr-fixes`), adds a *Fixed / ticked* column to it, and adds a **Confirmations**
+section: per event, an overview of every section (swims, confirmed, changed from the suggestion, who ticked the
+section) and each section's swims with TP, PB, the SW median, the watches, the ΔTP/PB, ΔTP/SW and ΔPB/SW differences
+(more than 0.30 s shaded) and what was confirmed (highlighted). The summary counts each event's swims confirmed with
+another value than suggested.
 
 ## Final audit
 
