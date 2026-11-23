@@ -1159,7 +1159,8 @@ def _confirm_times(e, sec):
                 got += f' <span class="badge minor">not {esc(PICK_NAME.get(r.get("default"), r.get("default") or ""))}</span>'
             if r.get("final") and vals.get(pick) and hundredths(vals[pick]) != hundredths(r["final"]):
                 got += f'<br><span class="muted">audit: {esc(r["final"])}</span>'
-        by = ('<span class="muted">suggested</span>' if r.get("auto") else who(r) if opts and r.get("by") else "")
+        by = ('<span class="muted">suggested</span>' if r.get("auto") else
+              who(r) + (' <span class="muted">(Confirm all)</span>' if r.get("all") else "") if opts and r.get("by") else "")
         sid = swim_id(e, r["h"], r["l"])
         dq = ' <span class="badge minor">DQ</span>' if r.get("dq") else ""
         rows.append(f'<tr><td><a href="#{sid}">{r["l"]}</a></td><td><a href="#{sid}">{r["h"]}</a></td>'
