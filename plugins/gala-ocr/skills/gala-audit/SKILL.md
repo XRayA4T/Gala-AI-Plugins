@@ -45,7 +45,7 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"] [--ocr-fixes] [--times TIMES.json] [--dqs DQS.json]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"] [--ocr-fixes [--checks CHECKS.json]] [--times TIMES.json] [--dqs DQS.json]
 ```
 
 `<gen7>` is the Gen7 session report PDF, or a **folder of Gen7's race-by-race PDFs** for one session (one PDF per
@@ -105,6 +105,12 @@ sheet swimmers it couldn't match.
 An entry **scratched** in Meet Manager (the entries export's E1 column 80 is `Y`) that didn't swim (a no-show on the
 lane sheet) is written with **no result**, as Meet Manager has it, not as a no-show. One that swam keeps its result,
 and the audit (given `--merge`) lists it in the Quick Fix list: "Scratched in Meet Manager but swam".
+
+`--not-entered NOT_ENTERED.json` (1.6.15) lists the swims by swimmers **not entered in the race**: a scratched entry
+that swam, and a swim confirmed by hand (`"add": true`) for a swimmer with no entry in the event, for which an entry is
+added. A fix with `"status": "NS"` on such a swim marks it as **no swim**: the scratched entry gets no result and no
+entry is added (it stays in the list with `"noSwim": true`). With `--ocr-fixes` the audit leaves the scratch out of its
+Quick Fix list; the gala audit portal confirms these swims (the referee approves, or no swim).
 
 `--hand-times 12` (both scripts) marks events timed by hand only, such as a time trial with no Gen7 race: their swims
 are timed from the lane sheet watches and the missing race isn't a problem. A fix with `"swimsEvent": N` on a swim
@@ -180,7 +186,11 @@ DQs. Keep it short; it is a to-do list, not a second copy of the report.
 `--ocr-fixes` (from 1.6.14) keeps the list to what the OCR has to settle, for a process that confirms the times and
 DQs separately (the gala audit portal's confirmations): unreadable or doubtful watches, poor watch times, an SW median
 more than 0.40 s from PB (a watch misread), lane sheet and Gen7 disagreeing on whether a lane swam, and swimmers
-written in or missing from the merge file. Swims in doubt and every DQ check are left out. `--times` writes every
+written in or missing from the merge file. Swims in doubt and every DQ check are left out, and from 1.6.15 so are
+watches more than 0.40 s from PB (or more than 1 s from a TP and PB that agree) when two or more of them agree with
+their median: no misread can be moving it. `--checks` (1.6.15) writes the other checks that aren't about the reading
+(several Gen7 races for a heat, the lane sheet and Gen7 disagreeing on a lane, a scratched entry that swam) for the
+confirmations to settle. `--times` writes every
 swim's TP, PB, SW times, median and final time with its swimmer and whether it is a no-show or a DQ, and `--dqs`
 every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction, code and findings.
 

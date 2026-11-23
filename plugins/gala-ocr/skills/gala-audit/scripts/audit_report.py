@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--dqs DQS.json] [--ocr-fixes] [--tolerance 0.30] [--codes DQ_CODES.txt] [--watches-over-pad]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--dqs DQS.json] [--ocr-fixes [--checks CHECKS.json]] [--tolerance 0.30] [--codes DQ_CODES.txt] [--watches-over-pad]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -39,8 +39,11 @@ and shows what the file has for each swim. --quick-fixes writes the list on its 
 names) and as JSON next to it, for final_audit.py.
 --ocr-fixes keeps the Quick Fix to what the OCR has to settle, for a process that confirms the times and DQs
 separately (the gala audit portal): unreadable or doubtful watches, poor watch times, an SW median more than 0.40 s
-from PB (a watch misread), lane sheet and Gen7 disagreeing on whether a lane swam, swimmers written in or missing
-from the merge file. Swims in doubt and every DQ check are left to that process.
+from PB (a watch misread), swimmers written in or missing from the merge file. Swims in doubt and every DQ check are left to that process, and so are watches more than 0.40 s
+from PB (or more than 1 s from a TP and PB that agree) when they agree with each other: no misread can be moving their
+median. --checks writes the other checks that aren't about the reading (several Gen7 races for a heat, the lane sheet and
+Gen7 disagreeing on a lane), for that process to settle; swims by swimmers not entered in the race (a scratched
+entry that swam, an entry added for a confirmed swim) come from merge_results.py --not-entered.
 --times writes every swim's times (TP, PB, SW, median, final) with its swimmer and whether it is a no-show or a DQ;
 --dqs writes every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction,
 code and findings.
@@ -88,6 +91,7 @@ HAND_EVENTS = set()
 
 # --ocr-fixes: the Quick Fix lists only what the OCR has to settle (see the docstring).
 OCR_FIXES = False
+OTHER_CHECKS = []   # with --ocr-fixes: the swims with checks that aren't about the reading (written by --checks)
 SW_PB_CHECK = 40   # with --ocr-fixes, an SW median further than this (hundredths) from PB is checked on the sheet
 # Heats timed in another heat's Gen7 race ("timedIn": "8-1" on a swim in --fixes, e.g. a time trial swum in event 8
 # heat 1's race): {(event, heat, lane): (event, heat)}, for that swim only.
@@ -200,6 +204,8 @@ def apply_hand_fixes(sheets, path):
             elif w.get("accepted") and t is not None and t.get("normalized"):
                 t["confidence"] = "HIGH"
                 n += 1
+        if str(f.get("status") or "").upper() == "NS":   # marked as no swim (e.g. a swimmer not entered in the race)
+            row["noSwim"] = True
         if str(f.get("swimsEvent") or "").isdigit():   # the swim counts for the swimmer's entry in another event
             row["swimsEvent"] = int(f["swimsEvent"])
             n += 1
@@ -896,10 +902,15 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
     dq-codes.json), and a DQ marked on a sheet with no slip; and, given our merge file (by_swim from hy3), a lane sheet swim not in it, a different
     swimmer there, or a DQ with no code."""
     fixes = defaultdict(list)
+    # --ocr-fixes: checks that aren't about the reading of the paperwork go to OTHER_CHECKS, to be settled when the
+    # swims are confirmed (a scratch, several Gen7 races for a heat, the lane sheet and Gen7 disagreeing on a lane).
+    other = defaultdict(list) if OCR_FIXES else fixes
     slips = defaultdict(list)  # the DQ slips a swim's checks are about
     on_sheet = set()  # swims with a check about the lane sheet
     for r in allres:
         key = (r["event"], r["heat"], r["lane"])
+        # The watches back each other up: two or more agree with their median, so a misread can't be moving it.
+        watches_agree = sum(1 for _, v, _ in r["sw"] if r["median"] is not None and abs(v - r["median"]) <= audit.tol) >= 2
         from_sw = r["final"] is not None and (r["final"] != r["tp"] or r["swDoubt"])
         for col, v, t in r["sw"] if from_sw else []:
             # An uncertain reading matters only when no other watch backs it up.
@@ -912,13 +923,16 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         for _, n in r["notes"]:
             if "could not be read" in n:
                 fixes[key].append(f"{n}: read the watch on the sheet")
-            elif n.startswith(("Poor SW time", "Several Gen7 races") + (() if OCR_FIXES else ("In doubt",))) \
-                    or n.endswith("check the sheet") \
-                    or "no time anywhere" in n or "but the lane sheet has a no-show" in n \
-                    or "but the lane sheet has no swimmer" in n:
+            elif n.startswith("Several Gen7 races") or "no time anywhere" in n \
+                    or "but the lane sheet has a no-show" in n or "but the lane sheet has no swimmer" in n:
+                other[key].append(n)
+            elif OCR_FIXES and n.startswith("SW times disagree with TP and PB") and watches_agree:
+                pass   # the watches agree with each other: no misread; the swim is confirmed with its times
+            elif n.startswith("Poor SW time") or (not OCR_FIXES and n.startswith("In doubt")) \
+                    or n.endswith("check the sheet"):
                 fixes[key].append(n)
         if OCR_FIXES and r["median"] is not None and r["pb"] is not None and abs(r["median"] - r["pb"]) > SW_PB_CHECK \
-                and not r["ns"]:
+                and not r["ns"] and not watches_agree:
             fixes[key].append(f"SW median {fmt(int(r['median']))} is {fmt(int(r['median']) - r['pb'], True)}s from PB "
                               f"{fmt(r['pb'])} (more than {SW_PB_CHECK / 100:.2f}s): check the watch readings on the sheet")
         row = r["row"]
@@ -948,7 +962,7 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
     if merge is not None:
         for (e, ln), sheet in audit.sheets.items():
             for h, row in enumerate(sheet["rows"], start=1):
-                if row["status"] not in ("SWAM", "DISQUALIFIED") or not row["handTimes"]:
+                if row["status"] not in ("SWAM", "DISQUALIFIED") or not row["handTimes"] or row.get("noSwim"):
                     continue
                 m = merge.get((e, h, ln)) or merge.get((row.get("swimsEvent") or e, h, ln))
                 if m is None:
@@ -958,8 +972,8 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                     fixes[(e, h, ln)].append("The lane sheet swimmer is not the one in the merge file: check the swimmer")
                     on_sheet.add((e, h, ln))
         for key, m in merge.items():
-            if m.get("scratched") and m["time"]:
-                fixes[key].append("Scratched in Meet Manager but swam (a time in the merge file): check the scratch")
+            if m.get("scratched") and m["time"] and not OCR_FIXES:   # with --ocr-fixes: merge_results --not-entered
+                other[key].append("Scratched in Meet Manager but swam (a time in the merge file): check the scratch")
             if m["status"] == "Q" and not m["code"] and not OCR_FIXES:
                 fixes[key].append("DQ in the merge file with no code: enter the code in Meet Manager")
                 if key in slip_of and slip_of[key] not in slips[key]:
@@ -967,6 +981,15 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                 else:
                     on_sheet.add(key)
     by_key = {(r["event"], r["heat"], r["lane"]): r for r in allres}
+    if OCR_FIXES:
+        on_sheet.update(other)
+        OTHER_CHECKS[:] = quick_fix_items(audit, other, by_key, slips, on_sheet, merge)
+    return quick_fix_items(audit, fixes, by_key, slips, on_sheet, merge)
+
+
+def quick_fix_items(audit, fixes, by_key, slips, on_sheet, merge):
+    """The Quick Fix entries for {(event, heat, lane): [checks]}: what the merge file has, the checks, the scans to
+    look at and the swim's times."""
     out = []
     for key in sorted(fixes):
         checks = list(dict.fromkeys(fixes[key]))
@@ -1305,6 +1328,12 @@ def main():
         pathlib.Path(args[args.index("--dqs") + 1]).write_text(json.dumps(dqs, indent=1), encoding="utf-8")
     pathlib.Path(args[2]).write_text(page, encoding="utf-8")
     print(f"Wrote {args[2]}: {len(fixes)} swims in Quick Fix")
+    if "--checks" in args:   # with --ocr-fixes: the checks that aren't about the reading, same shape as the Quick Fix
+        pathlib.Path(args[args.index("--checks") + 1]).write_text(
+            json.dumps([dict(x, name=(audit.sheets.get((x["event"], x["lane"])) or {"rows": []})["rows"][x["heat"] - 1]
+                             .get("swimmerName", "") if x["heat"] <= len((audit.sheets.get((x["event"], x["lane"]))
+                                                                          or {"rows": []})["rows"]) else "")
+                        for x in OTHER_CHECKS], indent=1), encoding="utf-8")
     if "--quick-fixes" in args:
         out = pathlib.Path(args[args.index("--quick-fixes") + 1])
         meet = next(iter(audit.sheets.values()))

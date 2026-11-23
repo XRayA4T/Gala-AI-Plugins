@@ -3,12 +3,16 @@
 times, DQs and no-shows worked out by audit_report.py.
 
 Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--hand-times 12] [--fixes FIXES.json] [--tolerance 0.30] [--watches-over-pad]
-                        [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
+                        [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O] [--not-entered NOT_ENTERED.json]
 
 --fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
 {"<event>-<heat>-<lane>": {"time": "1:05.32", "status": "OK|NS|DQ", "code": "BaG", "note": "", "watches": {...},
 "swimmer": {...}}}; result fixes override the audited time and status of those swims, and places are worked out
 with them; watch and swimmer fixes change the lane sheet first (see audit_report.apply_hand_fixes).
+--not-entered NOT_ENTERED.json lists the swims by swimmers not entered in the race: an entry scratched in Meet Manager
+that swam, and a swim confirmed by hand for a swimmer with no entry in the event (an entry is added for it). A fix with
+status "NS" on such a swim marks it as no swim: a scratched entry then has no result, and no entry is added ("noSwim"
+in the list).
 GEN7 is the session report PDF or a folder of one session's race-by-race PDFs. For a gala run session by session,
 give that session's entries export, merge results export and Gen7 folder; --events limits the file to those events
 (by default every event in ENTRIES.hy3).
@@ -121,6 +125,7 @@ def main():
     codes = ar.load_codes(opt("--codes", ar.DQ_CODES))
     groups = age_groups(opt("--age-groups", "10U,11,12,13,14,15,16,17O"))
     sheets, slips, etd = ar.load(ocr)
+    not_entered = []   # --not-entered: swims by swimmers not entered in the race
     if opt("--fixes", None):   # watches accepted or captured by hand, swimmers chosen for written-in names
         ar.apply_hand_fixes(sheets, opt("--fixes", None))
     given = pathlib.Path(ocr) / "dq-codes.json"
@@ -231,6 +236,10 @@ def main():
         if there is not None:
             there["heat"] = there["lane"] = 0
             problems.append(f"{who}: the swim was confirmed for {sw.get('name') or sid}; the entry seeded there has no result")
+        if mine is None and (f.get("status") or "").upper() == "NS":   # marked as no swim: no entry is added
+            not_entered.append({"event": e, "heat": h, "lane": ln, "kind": "added", "noSwim": True,
+                                "name": sw.get("name") or sid, "text": f"{sw.get('name') or sid} has no entry in event {e}"})
+            continue
         if mine is None:
             c1 = d1 = own = c1_cur = None
             for line in ent:
@@ -252,6 +261,9 @@ def main():
             swims.append(mine)
             problems.append(f"{who}: {sw.get('name') or sid} had no entry in event {e}; an entry was added for the "
                             f"confirmed swim (check it in Meet Manager after the import)")
+            not_entered.append({"event": e, "heat": h, "lane": ln, "kind": "added", "noSwim": False,
+                                "name": sw.get("name") or sid,
+                                "text": f"{sw.get('name') or sid} has no entry in event {e}: an entry was added for the swim"})
         mine["heat"], mine["lane"] = h, ln
         problems = [p for p in problems if not (p.startswith(who + " ") and "couldn't be seeded" in p)]
 
@@ -373,6 +385,11 @@ def main():
         # An entry scratched in Meet Manager (E1 column 80 "Y") that didn't swim gets no result, as Meet Manager has
         # it, not a no-show; one that swam keeps its result (the audit lists it to check the scratch).
         scratched = s["e1"][79:80] == "Y"
+        if scratched and s["heat"] and s.get("res") and s["res"]["final"] is not None:   # swam, though scratched
+            not_entered.append({"event": s["event"], "heat": s["heat"], "lane": s["lane"], "kind": "scratched",
+                                "noSwim": s["status"] == "R",
+                                "name": s["d1"][8:28].strip() + ", " + (s["d1"][48:68].strip() or s["d1"][28:48].strip()),
+                                "text": "Scratched in Meet Manager but swam"})
         if scratched and s["heat"] and s["status"] == "R":
             problems.append(f"E{s['event']} H{s['heat']} L{s['lane']}: scratched in the entries and didn't swim; "
                             f"written with no result")
@@ -431,6 +448,9 @@ def main():
           f"{counts['-']} with no result (not seeded, or scratched and not swum)")
     for p in problems:
         print(p)
+    if opt("--not-entered", None):
+        pathlib.Path(opt("--not-entered", None)).write_text(
+            ar.json.dumps(sorted(not_entered, key=lambda x: (x["event"], x["heat"], x["lane"])), indent=1), encoding="utf-8")
 
 
 def stamp(a1):
