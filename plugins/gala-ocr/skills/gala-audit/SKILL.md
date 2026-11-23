@@ -45,7 +45,7 @@ code differs from one written on the lane sheet.
 `$SKILL` is this skill's base directory; it needs `python3` and poppler (`pdftotext`, `pdftocairo`, `pdftoppm`).
 
 ```
-python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"]
+python3 -I $SKILL/scripts/audit_report.py <ocr folder> <gen7> "<out>.html" [--events 3,5-7] [--tolerance 0.30] [--codes DQ_CODES.txt] [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge "<our merge results>.hy3"] [--quick-fixes "<quick fix>.html"] [--ocr-fixes] [--times TIMES.json] [--dqs DQS.json]
 ```
 
 `<gen7>` is the Gen7 session report PDF, or a **folder of Gen7's race-by-race PDFs** for one session (one PDF per
@@ -177,6 +177,13 @@ when the swim has both kinds of check). In the report the link opens that page e
 Everything else stays in its own section: Gen7 differences in Serious issues and SW overrides, the other DQ codes in
 DQs. Keep it short; it is a to-do list, not a second copy of the report.
 
+`--ocr-fixes` (from 1.6.14) keeps the list to what the OCR has to settle, for a process that confirms the times and
+DQs separately (the gala audit portal's confirmations): unreadable or doubtful watches, poor watch times, an SW median
+more than 0.40 s from PB (a watch misread), lane sheet and Gen7 disagreeing on whether a lane swam, and swimmers
+written in or missing from the merge file. Swims in doubt and every DQ check are left out. `--times` writes every
+swim's TP, PB, SW times, median and final time with its swimmer and whether it is a no-show or a DQ, and `--dqs`
+every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction, code and findings.
+
 ## Final audit
 
 After the results are imported and finalised in Meet Manager, the user uploads Meet Manager's merge results export.
@@ -208,10 +215,13 @@ button time into it);
 | yes | within tolerance of PB and SW median | TP | |
 | yes | outside PB, within SW median | TP | bad PB time |
 | yes | outside SW median, in doubt: fewer than two SW times within the tolerance of their median, and PB not within it either | TP | in doubt; the SW times go in the merge file as backups |
-| yes | within PB, outside SW median | SW median | TP and PB both outside the watches (listed under SW overrides) |
+| yes | within PB, outside SW median | TP | SW times disagree with TP and PB; more than 1 s out goes in the Quick Fix (check the sheet: a misread time) |
 | yes | outside both | SW median | bad TP time (listed under SW overrides) |
 | no | | SW median, thousandths dropped | bad PB if PB is outside tolerance; poor SW time if adding PB moves the median by more than the tolerance |
 | no | no SW times | PB | |
+
+From 1.6.13 TP stands when it agrees with PB. Before that the SW median overrode it; for a gala whose results were
+published with that rule, pass `--watches-over-pad` to `audit_report.py` and `merge_results.py` to keep it.
 
 A **no-show** on the lane sheet (N/S, no SW times) is recorded as N/S with no time, even when Gen7 has a time; the
 report shows `N/S` as the final time and flags the Gen7 time for correction.

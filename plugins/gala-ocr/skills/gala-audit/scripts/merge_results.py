@@ -2,7 +2,7 @@
 """Write a Hy-Tek Meet Manager merge results file (.hy3) with the audited results: the final times, splits, backup
 times, DQs and no-shows worked out by audit_report.py.
 
-Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--hand-times 12] [--fixes FIXES.json] [--tolerance 0.30]
+Usage: merge_results.py OCR_DIR GEN7 ENTRIES.hy3 RESULTS.hy3|- OUT.hy3 [--events 1-12] [--hand-times 12] [--fixes FIXES.json] [--tolerance 0.30] [--watches-over-pad]
                         [--codes DQ_CODES.txt] [--age-groups 10U,11,12,13,14,15,16,17O]
 
 --fixes FIXES.json applies fixes made by hand after the audit (the gala audit portal writes them):
@@ -127,6 +127,7 @@ def main():
     assigned = ar.json.loads(given.read_text(encoding="utf-8")) if given.exists() else {}
     events = ar.parse_events(opt("--events", None))
     ar.HAND_EVENTS.update(ar.parse_events(opt("--hand-times", None)) or [])
+    ar.WATCHES_OVER_PAD = "--watches-over-pad" in sys.argv   # the rule before 1.6.13 (see audit_report.py)
     audit = ar.Audit(sheets, slips, etd, ar.gen7_report.races(gen7), tol, codes, assigned, events)
 
     # RESULTS may be "-" (or the entries export itself): the header and the result line's layout are then made from

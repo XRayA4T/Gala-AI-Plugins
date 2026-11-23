@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a gala audit report (one HTML page) from the gala-ocr transcriptions and the Gen7 session report.
 
-Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--tolerance 0.30] [--codes DQ_CODES.txt]
+Usage: audit_report.py OCR_DIR GEN7 OUT.html [--events 3,5-7] [--hand-times 12] [--fixes FIXES.json] [--times TIMES.json] [--dqs DQS.json] [--ocr-fixes] [--tolerance 0.30] [--codes DQ_CODES.txt] [--watches-over-pad]
                        [--scans DIR] [--scan-dpi 90] [--scan-quality 40] [--merge OUR_MERGE.hy3]
                        [--quick-fixes QUICK_FIXES.html]
 
@@ -17,9 +17,10 @@ programme heat to its Gen7 race; without them, a heat is matched to the Gen7 rac
 For every event, heat and lane the report lists the touch pad (TP) time, the push button (PB) time, every lane sheet
 (SW) time, the final time and audit notes. The final time:
 - with a TP time: TP when it is within the tolerance of the SW median (a PB time outside it is noted as bad);
-  otherwise the SW median overrides it: the TP time is noted as bad, or, when TP agrees with PB, as TP and PB both
-  outside the SW median; TP alone when there are no SW times. In doubt (fewer than two SW times within the tolerance of
-  their median, and PB not within it either), TP stands and is noted "In doubt";
+  TP when it agrees with PB, whatever the SW times (the swim goes in the Quick Fix to check the sheet when the SW
+  median is more than 1 s out: a misread time); otherwise the SW median overrides it and the TP time is noted as
+  bad; TP alone when there are no SW times. In doubt (fewer than two SW times within the tolerance of their median,
+  and PB not within it either), TP stands and is noted "In doubt";
 - with no TP time: the SW median (a PB time outside the tolerance of it is noted as bad, and poor SW times are noted
   when adding PB moves the median by more than the tolerance); PB alone when there are no SW times.
 A no-show on the lane sheet with no SW times is recorded as N/S with no time, even when Gen7 has one.
@@ -36,6 +37,13 @@ doubt), so they can be fixed quickly in Meet Manager once the merge results are 
 results file) it also lists lane sheet swims missing from it or given to another swimmer, and DQs in it with no code,
 and shows what the file has for each swim. --quick-fixes writes the list on its own (HTML to print, no swimmers'
 names) and as JSON next to it, for final_audit.py.
+--ocr-fixes keeps the Quick Fix to what the OCR has to settle, for a process that confirms the times and DQs
+separately (the gala audit portal): unreadable or doubtful watches, poor watch times, an SW median more than 0.40 s
+from PB (a watch misread), lane sheet and Gen7 disagreeing on whether a lane swam, swimmers written in or missing
+from the merge file. Swims in doubt and every DQ check are left to that process.
+--times writes every swim's times (TP, PB, SW, median, final) with its swimmer and whether it is a no-show or a DQ;
+--dqs writes every DQ (each slip, and each DQ marked on a lane sheet with no slip) with its swimmer, infraction,
+code and findings.
 A median of an even count is the mean of the middle two, with thousandths dropped for the final time.
 DQ codes: OCR_DIR/dq-codes.json, when present, gives each slip its code ({"<slip file>": {"code": "BrK", "note": ""}}).
 Codes are checked against the DQ code list (default: the FINA list in ../data/dqcodesFINA.txt, lines of
@@ -70,9 +78,17 @@ LANE_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-lane(?P<lane>\d+)-
 SLIP_NAME = re.compile(r"^(?P<scan>.+)-event(?P<event>\d{2,})-heat(?P<heat>\d+)-lane(?P<lane>\d+)-p(?P<page>\d{3,})\.json$")
 ETD_NAME = re.compile(r"^(?P<scan>.+)-p(?P<page>\d{3,})\.json$")
 DQ_CODES = pathlib.Path(__file__).resolve().parents[1] / "data" / "dqcodesFINA.txt"
+# The rule before 1.6.13, for a gala whose results were published with it: --watches-over-pad makes the SW median
+# override TP when TP and PB agree with each other but not with the watches (from 1.6.13 TP stands).
+WATCHES_OVER_PAD = False
+
 # Events timed by hand only (no Gen7 race, e.g. a time trial): --hand-times 12,13. Their swims are timed from the
 # lane sheet watches and the missing Gen7 race is not a problem.
 HAND_EVENTS = set()
+
+# --ocr-fixes: the Quick Fix lists only what the OCR has to settle (see the docstring).
+OCR_FIXES = False
+SW_PB_CHECK = 40   # with --ocr-fixes, an SW median further than this (hundredths) from PB is checked on the sheet
 # Heats timed in another heat's Gen7 race ("timedIn": "8-1" on a swim in --fixes, e.g. a time trial swum in event 8
 # heat 1's race): {(event, heat, lane): (event, heat)}, for that swim only.
 RACE_OF = {}
@@ -405,6 +421,13 @@ class Audit:
                 final = tp
                 if pb is not None and abs(tp - pb) > tol:
                     note(f"Bad PB time: {fmt(pb)} is {fmt(pb - tp, True)}s from TP", "warn")
+            elif pb is not None and abs(tp - pb) <= tol and not WATCHES_OVER_PAD:
+                # TP and PB agree: TP stands, whatever the watches say. Watches more than 1 s out look like a misread
+                # or mistimed watch, so the swim goes in the Quick Fix; less is slow or fast watches.
+                final, far = tp, abs(tp - med) > 100
+                note(f"SW times disagree with TP and PB: TP {fmt(tp)} and PB {fmt(pb)} agree but are "
+                     f"{fmt(tp - med, True)}s from the SW median {fmt(med)}; TP kept"
+                     + (": check the sheet" if far else ""), "warn" if far else "minor")
             elif sum(abs(v - med) <= tol for _, v, _ in sw) < 2 and not (pb is not None and abs(pb - med) <= tol):
                 # In doubt (fewer than two SW times agree with their median, and PB does not back it): TP stands,
                 # and the merge file carries the SW times for a referee to see.
@@ -413,10 +436,10 @@ class Audit:
                 note(f"In doubt: TP {fmt(tp)} is {fmt(tp - med, True)}s from the SW median, but {why}"
                      + (" and PB does not agree with them" if pb is not None else "")
                      + "; TP kept, SW times copied to the merge file", "warn")
-            elif pb is not None and abs(tp - pb) <= tol:
+            elif pb is not None and abs(tp - pb) <= tol:   # --watches-over-pad: the rule before 1.6.13
                 final, res["swOverride"] = int(med), True
                 note(f"TP and PB agree but are outside the SW median: TP {fmt(tp)} is {fmt(tp - med, True)}s and PB "
-                     f"{fmt(pb)} {fmt(pb - med, True)}s from it; SW median used", "warn")
+                     f"{fmt(pb)} {fmt(pb - med, True)}s from it; SW median used (--watches-over-pad)", "warn")
             else:
                 final, res["swOverride"] = int(med), True
                 note(f"Bad TP time: {fmt(tp)} is {fmt(tp - med, True)}s from the SW median"
@@ -889,16 +912,21 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         for _, n in r["notes"]:
             if "could not be read" in n:
                 fixes[key].append(f"{n}: read the watch on the sheet")
-            elif n.startswith(("Poor SW time", "In doubt", "Several Gen7 races")) or n.endswith("check the sheet") \
+            elif n.startswith(("Poor SW time", "Several Gen7 races") + (() if OCR_FIXES else ("In doubt",))) \
+                    or n.endswith("check the sheet") \
                     or "no time anywhere" in n or "but the lane sheet has a no-show" in n \
                     or "but the lane sheet has no swimmer" in n:
                 fixes[key].append(n)
+        if OCR_FIXES and r["median"] is not None and r["pb"] is not None and abs(r["median"] - r["pb"]) > SW_PB_CHECK \
+                and not r["ns"]:
+            fixes[key].append(f"SW median {fmt(int(r['median']))} is {fmt(int(r['median']) - r['pb'], True)}s from PB "
+                              f"{fmt(r['pb'])} (more than {SW_PB_CHECK / 100:.2f}s): check the watch readings on the sheet")
         row = r["row"]
         if row and row["status"] != "NO_SHOW" and WRITTEN_IN.search(row["notes"] or ""):
             fixes[key].append("A swimmer is written in over the printed one: check the entry the swim is given to")
     on_sheet.update(fixes)
     slip_of = {(s["eventNumber"], s["heat"], s["lane"]): s for s, _, _ in slip_rows}
-    for s, row, f in slip_rows:
+    for s, row, f in ([] if OCR_FIXES else slip_rows):
         key = (s["eventNumber"], s["heat"], s["lane"])
         before = len(fixes.get(key, []))
         given = audit.assigned.get(s["_file"], {})
@@ -914,7 +942,7 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
                 fixes[key].append(f"DQ slip: {t}")
         if len(fixes.get(key, [])) > before:
             slips[key].append(s)
-    for e, h, ln, _ in missing:
+    for e, h, ln, _ in ([] if OCR_FIXES else missing):
         fixes[(e, h, ln)].append("DQ marked on the lane sheet but there is no slip")
         on_sheet.add((e, h, ln))
     if merge is not None:
@@ -932,7 +960,7 @@ def quick_fixes(audit, allres, slip_rows, missing, merge=None):
         for key, m in merge.items():
             if m.get("scratched") and m["time"]:
                 fixes[key].append("Scratched in Meet Manager but swam (a time in the merge file): check the scratch")
-            if m["status"] == "Q" and not m["code"]:
+            if m["status"] == "Q" and not m["code"] and not OCR_FIXES:
                 fixes[key].append("DQ in the merge file with no code: enter the code in Meet Manager")
                 if key in slip_of and slip_of[key] not in slips[key]:
                     slips[key].append(slip_of[key])
@@ -1037,9 +1065,11 @@ def build(audit, tol, scans, merge=None):
     summary = [
         ("Swims with a final time", len(swims)),
         ("Final time from the touch pad", count(lambda r: r["final"] is not None and r["final"] == r["tp"])),
-        ("Final time from the SW median (no TP, or TP outside the SW median)", count(lambda r: has(r, "SW median used"))),
+        ("Final time from the SW median - no TP", count(lambda r: has(r, "SW median used") and r["tp"] is None)),
+        ("Final time from the SW median - TP outside the SW median",
+         count(lambda r: has(r, "SW median used") and r["tp"] is not None)),
         ("SW median overrides the TP time (see SW overrides)", count(lambda r: r["swOverride"])),
-        ("TP and PB agree but are outside the SW median", count(lambda r: has(r, "TP and PB agree"))),
+        ("TP and PB agree, SW times do not (TP kept; more than 1 s out: in Quick Fix)", count(lambda r: has(r, "SW times disagree with TP and PB"))),
         ("In doubt: TP kept, SW times copied to the merge file", count(lambda r: r["swDoubt"])),
         ("Bad TP time (outside the tolerance of both PB and the SW median)", count(lambda r: has(r, "Bad TP time"))),
         ("Bad PB time", count(lambda r: has(r, "Bad PB time"))),
@@ -1230,6 +1260,9 @@ def main():
     opt = lambda name, default: int(args[args.index(name) + 1]) if name in args else default  # noqa: E731
     scans = Scans(dirs, opt("--scan-dpi", 90), opt("--scan-quality", 40))
     events = parse_events(args[args.index("--events") + 1]) if "--events" in args else None
+    global WATCHES_OVER_PAD, OCR_FIXES
+    WATCHES_OVER_PAD = "--watches-over-pad" in args
+    OCR_FIXES = "--ocr-fixes" in args
     if "--hand-times" in args:
         HAND_EVENTS.update(parse_events(args[args.index("--hand-times") + 1]) or [])
     audit = Audit(sheets, slips, etd, gen7_report.races(args[1]), tol, codes, assigned, events)
@@ -1240,12 +1273,36 @@ def main():
     page, fixes = build(audit, tol, scans, merge)
     if "--times" in args:   # every swim's times, for tools that show them (the gala audit portal)
         f = lambda v: fmt(v) if v is not None else ""  # noqa: E731
-        rows = [{"event": r["event"], "heat": r["heat"], "lane": r["lane"], "tp": f(r["tp"]), "pb": f(r["pb"]),
+        slip_at = {(s["eventNumber"], s["heat"], s["lane"]) for s in audit.slips}
+        rows = [{"event": r["event"], "heat": r["heat"], "lane": r["lane"],
+                 "name": (r["row"] or {}).get("swimmerName", ""), "ns": bool(r["ns"]),
+                 "dq": bool(r["row"] and r["row"]["status"] == "DISQUALIFIED")
+                       or (r["event"], r["heat"], r["lane"]) in slip_at, "doubt": bool(r["swDoubt"]),
+                 "tp": f(r["tp"]), "pb": f(r["pb"]),
                  "median": f(r["median"]), "final": f(r["final"]), "official": f(r["official"]), "tolerance": tol / 100,
                  "sw": [{"column": c, "time": fmt(v), "written": t.get("written", ""), "confidence": t.get("confidence", ""),
                          "corrected": bool(t.get("corrected"))} for c, v, t in r["sw"]]}
                 for rs in audit.results().values() for r in rs]
         pathlib.Path(args[args.index("--times") + 1]).write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    if "--dqs" in args:   # every DQ: the slips, and DQs marked on a lane sheet with no slip
+        slip_rows, missing = audit.dq_findings(audit.results())
+        dqs = []
+        for sl, row, found in slip_rows:
+            code = audit.assigned.get(sl["_file"], {})
+            dqs.append({"event": sl["eventNumber"], "heat": sl["heat"], "lane": sl["lane"], "source": "slip",
+                        "name": (row or {}).get("swimmerName", ""), "infraction": sl["infraction"], "back": sl["back"],
+                        "code": code.get("code", ""), "codeText": audit.codes.get(code.get("code", ""), ("", ""))[0],
+                        "codeNote": code.get("note", ""), "slip": sl["_file"], "scan": sl["_scan"], "page": sl["_page"],
+                        "findings": [t for _, t in found]})
+        for e, h, ln, row in missing:
+            written = audit.written_codes(row)
+            dqs.append({"event": e, "heat": h, "lane": ln, "source": "sheet", "name": row.get("swimmerName", ""),
+                        "infraction": row.get("notes", ""), "back": "", "code": written[0] if written else "",
+                        "codeText": audit.codes.get(written[0], ("", ""))[0] if written else "", "codeNote": "",
+                        "slip": "", "scan": "", "page": None,
+                        "findings": ["DQ marked on the lane sheet but there is no slip"]})
+        dqs.sort(key=lambda d: (d["event"], d["heat"], d["lane"]))
+        pathlib.Path(args[args.index("--dqs") + 1]).write_text(json.dumps(dqs, indent=1), encoding="utf-8")
     pathlib.Path(args[2]).write_text(page, encoding="utf-8")
     print(f"Wrote {args[2]}: {len(fixes)} swims in Quick Fix")
     if "--quick-fixes" in args:
