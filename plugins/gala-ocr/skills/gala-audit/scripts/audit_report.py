@@ -1110,7 +1110,7 @@ def quick_fix_done(i):
     return f'<td>{made}{tick}</td>'
 
 
-PICK_NAME = {"tp": "TP", "pb": "PB", "sw": "SW median"}
+PICK_NAME = {"tp": "TP", "pb": "PB", "sw": "SW median", "time": "Override"}
 
 
 def _delta(a, b):
@@ -1135,7 +1135,7 @@ def _confirm_times(e, sec):
     rows = []
     for r in sec["rows"]:
         pick = (r.get("pick") if not r.get("stale") else None) if opts else show
-        vals = {"tp": r.get("tp") or "", "pb": r.get("pb") or "", "sw": r.get("med") or ""}
+        vals = {"tp": r.get("tp") or "", "pb": r.get("pb") or "", "sw": r.get("med") or "", "time": r.get("value") or ""}
         sw = {int(w[0]): w for w in r.get("sw") or [] if w and w[0]}
 
         def swc(c):
@@ -1157,6 +1157,15 @@ def _confirm_times(e, sec):
             got = esc(f'{PICK_NAME.get(pick, pick)} {vals.get(pick, "")}')
             if pick != r.get("default"):
                 got += f' <span class="badge minor">not {esc(PICK_NAME.get(r.get("default"), r.get("default") or ""))}</span>'
+            if pick == "time" and r.get("watches"):   # an override: the SW times edited or deleted
+                was = {int(w[0]): re.sub(r"(\.\d\d)\d+$", r"\1", w[1] or "") for w in r.get("sw") or [] if w and w[0]}
+                ch = []
+                for c in (1, 2, 3):
+                    a_, b_ = was.get(c, ""), str(r["watches"].get(str(c)) or "")
+                    if hundredths(a_) != hundredths(b_):
+                        ch.append(f"SW{c} {a_} deleted" if not b_ else f"SW{c} {b_} added" if not a_ else f"SW{c} {a_} &rarr; {b_}")
+                if ch:
+                    got += '<br><span class="muted">' + ", ".join(x if "&rarr;" in x else esc(x) for x in ch) + '</span>'
             if r.get("final") and vals.get(pick) and hundredths(vals[pick]) != hundredths(r["final"]):
                 got += f'<br><span class="muted">audit: {esc(r["final"])}</span>'
         by = ('<span class="muted">suggested</span>' if r.get("auto") else
